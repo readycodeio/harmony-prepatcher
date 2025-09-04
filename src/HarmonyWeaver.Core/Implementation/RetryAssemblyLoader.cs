@@ -15,8 +15,7 @@ namespace HarmonyWeaver.Core.Implementation
     public class RetryAssemblyLoader : IAssemblyLoader
     {
         private readonly List<AssemblyDefinition> _loadedAssemblies = new List<AssemblyDefinition>();
-        private readonly ReaderParameters _readOnlyParameters;
-        private readonly ReaderParameters _readWriteParameters;
+        private readonly ReaderParameters _readerParameters;
         private readonly int _maxAttempts;
         private readonly int _baseDelayMs;
 
@@ -35,19 +34,12 @@ namespace HarmonyWeaver.Core.Implementation
             _maxAttempts = maxAttempts;
             _baseDelayMs = baseDelayMs;
             
-            // Read-only parameters for scanning/discovery (less likely to conflict)
-            _readOnlyParameters = new ReaderParameters
+            // Use read-only parameters since we're only scanning patch assemblies, not modifying them
+            // This should reduce file locking conflicts on Windows
+            _readerParameters = new ReaderParameters
             {
-                ReadWrite = false,
-                InMemory = true,
-                ReadingMode = ReadingMode.Immediate
-            };
-
-            // Read-write parameters for patching (when we need to modify)
-            _readWriteParameters = new ReaderParameters
-            {
-                ReadWrite = true,
-                InMemory = true,
+                ReadWrite = false,  // Read-only - we don't modify patch assemblies
+                InMemory = true,    // Load into memory to release file handle quickly
                 ReadingMode = ReadingMode.Immediate
             };
         }
