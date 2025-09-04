@@ -10,6 +10,7 @@ namespace HarmonyWeaver.Tests
     /// <summary>
     /// Debug test to understand what's happening with patch scanning
     /// </summary>
+    [Collection("IntegrationTests")]
     public class DebugPatchScanningTest
     {
         private readonly ITestOutputHelper _output;

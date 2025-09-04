@@ -12,6 +12,7 @@ namespace HarmonyWeaver.Tests
     /// <summary>
     /// Debug test to understand logging behavior in patched assemblies
     /// </summary>
+    [Collection("IntegrationTests")]
     public class LoggingDebugTest
     {
         private readonly ITestOutputHelper _output;
@@ -21,7 +22,8 @@ namespace HarmonyWeaver.Tests
         public LoggingDebugTest(ITestOutputHelper output)
         {
             _output = output;
-            _testOutputDirectory = Path.Combine(Path.GetTempPath(), "HarmonyWeaverLoggingDebug", Guid.NewGuid().ToString());
+            var uniqueId = $"{DateTime.Now:yyyyMMdd_HHmmss_fff}_{Environment.CurrentManagedThreadId}_{Guid.NewGuid():N}";
+            _testOutputDirectory = Path.Combine(Path.GetTempPath(), "HarmonyWeaverLoggingDebug", uniqueId);
             Directory.CreateDirectory(_testOutputDirectory);
 
             var assemblyLoader = new AssemblyLoader();

@@ -11,7 +11,9 @@ namespace HarmonyWeaver.Tests
 {
     /// <summary>
     /// Integration tests that verify the actual patching functionality works end-to-end
+    /// Uses collection to prevent parallel execution and avoid shared state conflicts
     /// </summary>
+    [Collection("IntegrationTests")]
     public class IntegrationTests : IDisposable
     {
         private readonly string _testOutputDirectory;
@@ -19,7 +21,9 @@ namespace HarmonyWeaver.Tests
 
         public IntegrationTests()
         {
-            _testOutputDirectory = Path.Combine(Path.GetTempPath(), "HarmonyWeaverIntegrationTests", Guid.NewGuid().ToString());
+            // Use timestamp and thread ID to ensure unique directory even in parallel execution
+            var uniqueId = $"{DateTime.Now:yyyyMMdd_HHmmss_fff}_{Environment.CurrentManagedThreadId}_{Guid.NewGuid():N}";
+            _testOutputDirectory = Path.Combine(Path.GetTempPath(), "HarmonyWeaverIntegrationTests", uniqueId);
             Directory.CreateDirectory(_testOutputDirectory);
 
             // Create the weaver with default implementations
@@ -34,10 +38,12 @@ namespace HarmonyWeaver.Tests
         [Fact]
         public void PatchCalculatorAdd_WithPrefixAndPostfix_ShouldWork()
         {
-            // Arrange
-            var logFilePath = Path.Combine(_testOutputDirectory, "patch_test.log");
+            // Arrange - Use unique logger name to avoid conflicts in parallel execution
+            var testId = Guid.NewGuid().ToString("N")[0..8];
+            var logFilePath = Path.Combine(_testOutputDirectory, $"patch_test_{testId}.log");
             var fileLogger = new FileLogger(logFilePath);
-            LoggerProvider.SetLogger(fileLogger);
+            LoggerProvider.SetNamedLogger($"test_{testId}", fileLogger);
+            LoggerProvider.SetGlobalLogger(fileLogger); // Also set as global for this test
 
             var examplesAssemblyPath = GetAssemblyPath("HarmonyWeaver.Examples.dll");
             var patchesAssemblyPath = GetAssemblyPath("HarmonyWeaver.Tests.Patches.dll");
@@ -48,7 +54,7 @@ namespace HarmonyWeaver.Tests
                 return; // Skip this test for now
             }
 
-            var outputPath = Path.Combine(_testOutputDirectory, "HarmonyWeaver.Examples_patched.dll");
+            var outputPath = Path.Combine(_testOutputDirectory, $"HarmonyWeaver.Examples_patched_{testId}.dll");
 
             // Act
             var patchedFiles = _harmonyWeaver.ProcessPatches(
@@ -98,15 +104,18 @@ namespace HarmonyWeaver.Tests
                 $"Expected at least 2 log entries, but got {logEntries.Length}. Entries: {string.Join("; ", logEntries)}");
 
             // Clean up
-            LoggerProvider.ClearLogger();
+            LoggerProvider.ClearAllLoggers();
         }
 
         [Fact]
         public void PatchCalculatorMultiply_WithSkipPrefix_ShouldReturnCustomResult()
         {
-            // Arrange
-            var testLogger = new TestLogger();
-            LoggerProvider.SetLogger(testLogger);
+            // Arrange - Use unique identifiers to avoid parallel execution conflicts
+            var testId = Guid.NewGuid().ToString("N")[0..8];
+            var logFilePath = Path.Combine(_testOutputDirectory, $"skip_test_{testId}.log");
+            var fileLogger = new FileLogger(logFilePath);
+            LoggerProvider.SetNamedLogger($"skip_test_{testId}", fileLogger);
+            LoggerProvider.SetGlobalLogger(fileLogger);
 
             var examplesAssemblyPath = GetAssemblyPath("HarmonyWeaver.Examples.dll");
             var patchesAssemblyPath = GetAssemblyPath("HarmonyWeaver.Tests.Patches.dll");
@@ -117,7 +126,7 @@ namespace HarmonyWeaver.Tests
                 return;
             }
 
-            var outputPath = Path.Combine(_testOutputDirectory, "HarmonyWeaver.Examples_skip_test.dll");
+            var outputPath = Path.Combine(_testOutputDirectory, $"HarmonyWeaver.Examples_skip_test_{testId}.dll");
 
             // Act
             var patchedFiles = _harmonyWeaver.ProcessPatches(
@@ -141,37 +150,42 @@ namespace HarmonyWeaver.Tests
             var multiplyMethod = calculatorType.GetMethod("Multiply");
             var subtractMethod = calculatorType.GetMethod("Subtract");
 
-            testLogger.Clear();
+            fileLogger.Clear();
 
             // Test: Multiply should return 999 (from prefix) instead of 5 * 3 = 15
             var result = multiplyMethod.Invoke(calculator, new object[] { 5, 3 });
             
+            // Wait for file I/O
+            System.Threading.Thread.Sleep(100);
+            
             // Verify the skip prefix was called
-            Assert.True(testLogger.ContainsMessage("[SKIP PREFIX] Multiply(5, 3) - returning custom result"),
+            Assert.True(fileLogger.ContainsMessage("[SKIP PREFIX] Multiply(5, 3) - returning custom result"),
                 "Skip prefix should have logged the custom result message");
 
             // This is the main test - if skip logic works, we should get 999 instead of 15
             Assert.Equal(999, result); // Custom result from prefix, not 15
 
-            testLogger.Clear();
+            fileLogger.Clear();
 
             // Test conditional skip logic
             // Case 1: Should skip and return 42
             var skipResult = subtractMethod.Invoke(calculator, new object[] { 100, 1 });
-            Assert.True(testLogger.ContainsMessage("[CONDITIONAL PREFIX] Special case detected, returning 42"),
+            System.Threading.Thread.Sleep(100);
+            Assert.True(fileLogger.ContainsMessage("[CONDITIONAL PREFIX] Special case detected, returning 42"),
                 "Conditional prefix should have detected the special case");
             Assert.Equal(42, skipResult); // Custom result from prefix
             
-            testLogger.Clear();
+            fileLogger.Clear();
             
             // Case 2: Should NOT skip and return normal result
             var normalResult = subtractMethod.Invoke(calculator, new object[] { 10, 3 });
-            Assert.True(testLogger.ContainsMessage("[CONDITIONAL PREFIX] Normal case, continuing with original method"),
+            System.Threading.Thread.Sleep(100);
+            Assert.True(fileLogger.ContainsMessage("[CONDITIONAL PREFIX] Normal case, continuing with original method"),
                 "Conditional prefix should have detected the normal case");
             Assert.Equal(7, normalResult); // Normal subtraction: 10 - 3 = 7
 
             // Clean up
-            LoggerProvider.ClearLogger();
+            LoggerProvider.ClearAllLoggers();
         }
 
         private string GetAssemblyPath(string assemblyFileName)

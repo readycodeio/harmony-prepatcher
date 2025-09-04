@@ -17,7 +17,8 @@ namespace HarmonyWeaver.Tests
 
         public HarmonyWeaverTests()
         {
-            _testOutputDirectory = Path.Combine(Path.GetTempPath(), "HarmonyWeaverTests", Guid.NewGuid().ToString());
+            var uniqueId = $"{DateTime.Now:yyyyMMdd_HHmmss_fff}_{Environment.CurrentManagedThreadId}_{Guid.NewGuid():N}";
+            _testOutputDirectory = Path.Combine(Path.GetTempPath(), "HarmonyWeaverTests", uniqueId);
             Directory.CreateDirectory(_testOutputDirectory);
 
             // Create the weaver with default implementations
