@@ -28,12 +28,13 @@ namespace HarmonyWeaver.Tests
             _testOutputDirectory = Path.Combine(Path.GetTempPath(), "HarmonyWeaverLoggingDebug", uniqueId);
             Directory.CreateDirectory(_testOutputDirectory);
 
-            var cecilAssemblyLoader = new AssemblyLoader(); // For Mono.Cecil
+            // Use RetryAssemblyLoader for Cecil assemblies (ProcessPatches phase)
+            var cecilAssemblyLoader = new RetryAssemblyLoader(maxAttempts: 10, baseDelayMs: 25);
             var patchScanner = new PatchScanner();
             var ilWeaver = new ILWeaver();
             var assemblySaver = new AssemblySaver();
 
-            // Use RetryAssemblyLoader with 10 retries for Windows compatibility
+            // Use RetryRuntimeAssemblyLoader for loading patched assemblies for execution
             _runtimeAssemblyLoader = new RetryRuntimeAssemblyLoader(maxAttempts: 10, baseDelayMs: 25);
 
             _harmonyWeaver = new Core.HarmonyWeaver(cecilAssemblyLoader, patchScanner, ilWeaver, assemblySaver);
