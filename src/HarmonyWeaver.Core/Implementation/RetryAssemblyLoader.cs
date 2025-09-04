@@ -15,7 +15,8 @@ namespace HarmonyWeaver.Core.Implementation
     public class RetryAssemblyLoader : IAssemblyLoader
     {
         private readonly List<AssemblyDefinition> _loadedAssemblies = new List<AssemblyDefinition>();
-        private readonly ReaderParameters _readerParameters;
+        private readonly ReaderParameters _readOnlyParameters;
+        private readonly ReaderParameters _readWriteParameters;
         private readonly int _maxAttempts;
         private readonly int _baseDelayMs;
 
@@ -34,14 +35,47 @@ namespace HarmonyWeaver.Core.Implementation
             _maxAttempts = maxAttempts;
             _baseDelayMs = baseDelayMs;
             
-            _readerParameters = new ReaderParameters
+            // Read-only parameters for scanning/discovery (less likely to conflict)
+            _readOnlyParameters = new ReaderParameters
+            {
+                ReadWrite = false,
+                InMemory = true,
+                ReadingMode = ReadingMode.Immediate
+            };
+
+            // Read-write parameters for patching (when we need to modify)
+            _readWriteParameters = new ReaderParameters
             {
                 ReadWrite = true,
-                InMemory = true
+                InMemory = true,
+                ReadingMode = ReadingMode.Immediate
             };
         }
 
         public AssemblyDefinition LoadAssembly(string assemblyPath)
+        {
+            // For target assemblies that need patching, we need read-write access
+            // Try with sharing-friendly file stream first
+            return LoadAssemblyWithSharedStream(assemblyPath);
+        }
+
+        /// <summary>
+        /// Load assembly for patching (requires read-write access)
+        /// </summary>
+        public AssemblyDefinition LoadAssemblyForPatching(string assemblyPath)
+        {
+            return LoadAssemblyWithParameters(assemblyPath, _readWriteParameters, "read-write");
+        }
+
+        /// <summary>
+        /// Load assembly for reading only (scanning patches, less likely to conflict)
+        /// </summary>
+        public AssemblyDefinition LoadAssemblyForReading(string assemblyPath)
+        {
+            return LoadAssemblyWithParameters(assemblyPath, _readOnlyParameters, "read-only");
+        }
+
+        private AssemblyDefinition LoadAssemblyWithParameters(string assemblyPath, ReaderParameters parameters, string mode)
         {
             if (string.IsNullOrWhiteSpace(assemblyPath))
                 throw new ArgumentNullException(nameof(assemblyPath));
@@ -55,7 +89,7 @@ namespace HarmonyWeaver.Core.Implementation
             {
                 try
                 {
-                    var assembly = AssemblyDefinition.ReadAssembly(assemblyPath, _readerParameters);
+                    var assembly = AssemblyDefinition.ReadAssembly(assemblyPath, parameters);
                     _loadedAssemblies.Add(assembly);
                     return assembly;
                 }
@@ -83,7 +117,7 @@ namespace HarmonyWeaver.Core.Implementation
 
             // All attempts failed
             throw new InvalidOperationException(
-                $"Failed to load assembly after {_maxAttempts} attempts: {assemblyPath}. " +
+                $"Failed to load assembly in {mode} mode after {_maxAttempts} attempts: {assemblyPath}. " +
                 $"This may be due to antivirus software, file indexing, or other system processes locking the file. " +
                 $"Last error: {lastException?.Message}", 
                 lastException);
