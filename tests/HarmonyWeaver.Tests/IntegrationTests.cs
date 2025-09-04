@@ -1,5 +1,6 @@
 using HarmonyWeaver.Core;
 using HarmonyWeaver.Core.Implementation;
+using HarmonyWeaver.Core.Logging;
 using System;
 using System.IO;
 using System.Reflection;
@@ -33,6 +34,10 @@ namespace HarmonyWeaver.Tests
         public void PatchCalculatorAdd_WithPrefixAndPostfix_ShouldWork()
         {
             // Arrange
+            var logFilePath = Path.Combine(_testOutputDirectory, "patch_test.log");
+            var fileLogger = new FileLogger(logFilePath);
+            LoggerProvider.SetLogger(fileLogger);
+
             var examplesAssemblyPath = GetAssemblyPath("HarmonyWeaver.Examples.dll");
             var patchesAssemblyPath = GetAssemblyPath("HarmonyWeaver.Tests.Patches.dll");
             
@@ -51,15 +56,14 @@ namespace HarmonyWeaver.Tests
                 new[] { outputPath }
             );
 
-            // Assert
+            // Assert patching worked
             Assert.Single(patchedFiles);
             Assert.True(File.Exists(outputPath));
 
-            // Verify the patched assembly can be loaded
+            // Load the patched assembly and test the patched method
             var patchedAssembly = Assembly.LoadFrom(outputPath);
             Assert.NotNull(patchedAssembly);
 
-            // Try to create an instance and call the patched method
             var calculatorType = patchedAssembly.GetType("HarmonyWeaver.Examples.Calculator");
             Assert.NotNull(calculatorType);
 
@@ -69,15 +73,40 @@ namespace HarmonyWeaver.Tests
             var addMethod = calculatorType.GetMethod("Add");
             Assert.NotNull(addMethod);
 
+            // Clear any previous log entries
+            fileLogger.Clear();
+
             // Call the patched method
             var result = addMethod.Invoke(calculator, new object[] { 5, 3 });
+            
+            // Verify the method returns the correct result
             Assert.Equal(8, result);
+
+            // Wait a moment for file I/O to complete
+            System.Threading.Thread.Sleep(100);
+
+            // Verify the patches were executed by checking the log messages
+            Assert.True(fileLogger.ContainsMessage("[PREFIX] About to add 5 + 3"), 
+                "Prefix patch should have logged the operation");
+            Assert.True(fileLogger.ContainsMessage("[POSTFIX] Addition result: 5 + 3 = 8"), 
+                "Postfix patch should have logged the result");
+            
+            // Verify we have at least 2 log entries (prefix + postfix)
+            var logEntries = fileLogger.ReadAllEntries();
+            Assert.True(logEntries.Length >= 2, 
+                $"Expected at least 2 log entries, but got {logEntries.Length}. Entries: {string.Join("; ", logEntries)}");
+
+            // Clean up
+            LoggerProvider.ClearLogger();
         }
 
         [Fact]
         public void PatchCalculatorMultiply_WithSkipPrefix_ShouldReturnCustomResult()
         {
             // Arrange
+            var testLogger = new TestLogger();
+            LoggerProvider.SetLogger(testLogger);
+
             var examplesAssemblyPath = GetAssemblyPath("HarmonyWeaver.Examples.dll");
             var patchesAssemblyPath = GetAssemblyPath("HarmonyWeaver.Tests.Patches.dll");
             
@@ -96,7 +125,7 @@ namespace HarmonyWeaver.Tests
                 new[] { outputPath }
             );
 
-            // Assert
+            // Assert patching worked
             Assert.Single(patchedFiles);
             Assert.True(File.Exists(outputPath));
 
@@ -106,20 +135,39 @@ namespace HarmonyWeaver.Tests
             var calculator = Activator.CreateInstance(calculatorType);
             var multiplyMethod = calculatorType.GetMethod("Multiply");
 
+            testLogger.Clear();
+
             // Test: Multiply should return 999 (from prefix) instead of 5 * 3 = 15
             var result = multiplyMethod.Invoke(calculator, new object[] { 5, 3 });
+            
+            // Verify the skip prefix was called
+            Assert.True(testLogger.ContainsMessage("[SKIP PREFIX] Multiply(5, 3) - returning custom result"),
+                "Skip prefix should have logged the custom result message");
+
+            // This is the main test - if skip logic works, we should get 999 instead of 15
             Assert.Equal(999, result); // Custom result from prefix, not 15
+
+            testLogger.Clear();
 
             // Test conditional skip logic
             var subtractMethod = calculatorType.GetMethod("Subtract");
             
             // Case 1: Should skip and return 42
             var skipResult = subtractMethod.Invoke(calculator, new object[] { 100, 1 });
+            Assert.True(testLogger.ContainsMessage("[CONDITIONAL PREFIX] Special case detected, returning 42"),
+                "Conditional prefix should have detected the special case");
             Assert.Equal(42, skipResult); // Custom result from prefix
+            
+            testLogger.Clear();
             
             // Case 2: Should NOT skip and return normal result
             var normalResult = subtractMethod.Invoke(calculator, new object[] { 10, 3 });
+            Assert.True(testLogger.ContainsMessage("[CONDITIONAL PREFIX] Normal case, continuing with original method"),
+                "Conditional prefix should have detected the normal case");
             Assert.Equal(7, normalResult); // Normal subtraction: 10 - 3 = 7
+
+            // Clean up
+            LoggerProvider.ClearLogger();
         }
 
         private string GetAssemblyPath(string assemblyFileName)

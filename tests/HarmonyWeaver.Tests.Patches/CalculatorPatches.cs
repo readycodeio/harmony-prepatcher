@@ -1,4 +1,5 @@
 using HarmonyLib;
+using HarmonyWeaver.Core.Logging;
 using System;
 
 namespace HarmonyWeaver.Tests.Patches
@@ -16,7 +17,7 @@ namespace HarmonyWeaver.Tests.Patches
         [HarmonyPrefix]
         public static bool AddPrefix(int a, int b)
         {
-            Console.WriteLine($"[PREFIX] About to add {a} + {b}");
+            LoggerProvider.Logger.LogInfo($"[PREFIX] About to add {a} + {b}");
             
             // Return true to continue with original method, false to skip
             return true;
@@ -29,7 +30,7 @@ namespace HarmonyWeaver.Tests.Patches
         [HarmonyPostfix]
         public static void AddPostfix(int a, int b, int __result)
         {
-            Console.WriteLine($"[POSTFIX] Addition result: {a} + {b} = {__result}");
+            LoggerProvider.Logger.LogInfo($"[POSTFIX] Addition result: {a} + {b} = {__result}");
         }
 
         /// <summary>
@@ -39,11 +40,11 @@ namespace HarmonyWeaver.Tests.Patches
         [HarmonyPrefix]
         public static bool DividePrefix(int a, int b, ref int __result)
         {
-            Console.WriteLine($"[PREFIX] About to divide {a} / {b}");
+            LoggerProvider.Logger.LogInfo($"[PREFIX] About to divide {a} / {b}");
             
             if (b == 0)
             {
-                Console.WriteLine("[PREFIX] Division by zero detected, returning 0 instead of throwing");
+                LoggerProvider.Logger.LogWarning("[PREFIX] Division by zero detected, returning 0 instead of throwing");
                 __result = 0;
                 return false; // Skip original method
             }
@@ -60,11 +61,11 @@ namespace HarmonyWeaver.Tests.Patches
         {
             if (__exception != null)
             {
-                Console.WriteLine($"[FINALIZER] Exception caught in Divide({a}, {b}): {__exception.Message}");
+                LoggerProvider.Logger.LogError($"[FINALIZER] Exception caught in Divide({a}, {b}): {__exception.Message}");
             }
             else
             {
-                Console.WriteLine($"[FINALIZER] Divide({a}, {b}) completed successfully");
+                LoggerProvider.Logger.LogInfo($"[FINALIZER] Divide({a}, {b}) completed successfully");
             }
         }
     }
