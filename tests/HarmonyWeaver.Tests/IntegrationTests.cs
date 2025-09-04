@@ -89,8 +89,6 @@ namespace HarmonyWeaver.Tests
             // Verify the method returns the correct result
             Assert.Equal(8, result);
 
-            // Wait a moment for file I/O to complete
-            System.Threading.Thread.Sleep(100);
 
             // Verify the patches were executed by checking the log messages
             Assert.True(fileLogger.ContainsMessage("[PREFIX] About to add 5 + 3"), 
@@ -155,9 +153,6 @@ namespace HarmonyWeaver.Tests
             // Test: Multiply should return 999 (from prefix) instead of 5 * 3 = 15
             var result = multiplyMethod.Invoke(calculator, new object[] { 5, 3 });
             
-            // Wait for file I/O
-            System.Threading.Thread.Sleep(100);
-            
             // Verify the skip prefix was called
             Assert.True(fileLogger.ContainsMessage("[SKIP PREFIX] Multiply(5, 3) - returning custom result"),
                 "Skip prefix should have logged the custom result message");
@@ -170,7 +165,6 @@ namespace HarmonyWeaver.Tests
             // Test conditional skip logic
             // Case 1: Should skip and return 42
             var skipResult = subtractMethod.Invoke(calculator, new object[] { 100, 1 });
-            System.Threading.Thread.Sleep(100);
             Assert.True(fileLogger.ContainsMessage("[CONDITIONAL PREFIX] Special case detected, returning 42"),
                 "Conditional prefix should have detected the special case");
             Assert.Equal(42, skipResult); // Custom result from prefix
@@ -179,7 +173,6 @@ namespace HarmonyWeaver.Tests
             
             // Case 2: Should NOT skip and return normal result
             var normalResult = subtractMethod.Invoke(calculator, new object[] { 10, 3 });
-            System.Threading.Thread.Sleep(100);
             Assert.True(fileLogger.ContainsMessage("[CONDITIONAL PREFIX] Normal case, continuing with original method"),
                 "Conditional prefix should have detected the normal case");
             Assert.Equal(7, normalResult); // Normal subtraction: 10 - 3 = 7

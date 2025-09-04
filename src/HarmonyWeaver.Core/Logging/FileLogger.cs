@@ -44,7 +44,10 @@ namespace HarmonyWeaver.Core.Logging
             {
                 lock (_lockObject)
                 {
-                    File.AppendAllText(_logFilePath, logEntry + Environment.NewLine);
+                    // Use synchronous file operations with explicit flushing
+                    using var writer = new StreamWriter(_logFilePath, append: true);
+                    writer.WriteLine(logEntry);
+                    writer.Flush(); // Ensure data is written immediately
                 }
             }
             catch
