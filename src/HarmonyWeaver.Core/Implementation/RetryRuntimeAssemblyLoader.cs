@@ -1,44 +1,60 @@
+using HarmonyWeaver.Core.Interfaces;
 using System;
 using System.IO;
 using System.Reflection;
 using System.Threading;
 
-namespace HarmonyWeaver.Core.Loading
+namespace HarmonyWeaver.Core.Implementation
 {
     /// <summary>
-    /// Assembly loader with Windows-specific retry logic for antivirus/file locking issues
+    /// Assembly loader with configurable retry logic for handling file locking issues
+    /// (Windows antivirus scanning, indexing services, etc.)
     /// </summary>
-    public static class WindowsAssemblyLoader
+    public class RetryRuntimeAssemblyLoader : IRuntimeAssemblyLoader
     {
+        private readonly int _maxAttempts;
+        private readonly int _baseDelayMs;
+
         /// <summary>
-        /// Load assembly with retry logic to handle Windows file locking issues
-        /// (antivirus scanning, indexing services, etc.)
+        /// Initialize the retry assembly loader
         /// </summary>
-        /// <param name="assemblyPath">Path to the assembly to load</param>
         /// <param name="maxAttempts">Maximum number of retry attempts</param>
-        /// <param name="baseDelayMs">Base delay in milliseconds (exponential backoff)</param>
-        /// <returns>Loaded assembly</returns>
-        public static Assembly LoadFromWithRetry(string assemblyPath, int maxAttempts = 5, int baseDelayMs = 50)
+        /// <param name="baseDelayMs">Base delay in milliseconds for exponential backoff</param>
+        public RetryRuntimeAssemblyLoader(int maxAttempts = 5, int baseDelayMs = 50)
         {
+            if (maxAttempts <= 0)
+                throw new ArgumentException("Max attempts must be greater than 0", nameof(maxAttempts));
+            if (baseDelayMs < 0)
+                throw new ArgumentException("Base delay must be non-negative", nameof(baseDelayMs));
+
+            _maxAttempts = maxAttempts;
+            _baseDelayMs = baseDelayMs;
+        }
+
+        public Assembly LoadAssembly(string assemblyPath)
+        {
+            if (string.IsNullOrWhiteSpace(assemblyPath))
+                throw new ArgumentNullException(nameof(assemblyPath));
+
             if (!File.Exists(assemblyPath))
                 throw new FileNotFoundException($"Assembly file not found: {assemblyPath}");
 
             Exception? lastException = null;
 
-            for (int attempt = 0; attempt < maxAttempts; attempt++)
+            for (int attempt = 0; attempt < _maxAttempts; attempt++)
             {
                 try
                 {
                     // Try to load the assembly
                     return Assembly.LoadFrom(assemblyPath);
                 }
-                catch (Exception ex) when (IsTransientFileError(ex) && attempt < maxAttempts - 1)
+                catch (Exception ex) when (IsTransientFileError(ex) && attempt < _maxAttempts - 1)
                 {
-                    // File is likely locked by antivirus or other Windows services
+                    // File is likely locked by antivirus or other system services
                     lastException = ex;
                     
-                    // Exponential backoff: 50ms, 100ms, 200ms, 400ms
-                    var delay = baseDelayMs * (1 << attempt);
+                    // Exponential backoff: baseDelay, baseDelay*2, baseDelay*4, etc.
+                    var delay = _baseDelayMs * (1 << attempt);
                     Thread.Sleep(delay);
                 }
                 catch (BadImageFormatException ex)
@@ -56,8 +72,8 @@ namespace HarmonyWeaver.Core.Loading
 
             // All attempts failed
             throw new InvalidOperationException(
-                $"Failed to load assembly after {maxAttempts} attempts: {assemblyPath}. " +
-                $"This may be due to Windows antivirus software or file system delays. " +
+                $"Failed to load assembly after {_maxAttempts} attempts: {assemblyPath}. " +
+                $"This may be due to antivirus software, file indexing, or other system processes locking the file. " +
                 $"Last error: {lastException?.Message}", 
                 lastException);
         }
@@ -70,8 +86,10 @@ namespace HarmonyWeaver.Core.Loading
             return ex is IOException ||
                    ex is UnauthorizedAccessException ||
                    ex is InvalidOperationException ||
-                   (ex is SystemException && ex.Message.Contains("locked")) ||
-                   (ex is SystemException && ex.Message.Contains("access"));
+                   (ex is SystemException && (
+                       ex.Message.Contains("locked", StringComparison.OrdinalIgnoreCase) ||
+                       ex.Message.Contains("access", StringComparison.OrdinalIgnoreCase) ||
+                       ex.Message.Contains("use", StringComparison.OrdinalIgnoreCase))); // "file is in use"
         }
 
         /// <summary>
@@ -84,32 +102,10 @@ namespace HarmonyWeaver.Core.Loading
                 using var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read);
                 return true;
             }
-            catch (IOException)
+            catch (Exception ex) when (IsTransientFileError(ex))
             {
                 return false;
             }
-            catch (UnauthorizedAccessException)
-            {
-                return false;
-            }
-        }
-
-        /// <summary>
-        /// Wait for a file to become available for reading
-        /// </summary>
-        public static void WaitForFileReady(string filePath, int timeoutMs = 5000, int checkIntervalMs = 50)
-        {
-            var startTime = DateTime.UtcNow;
-            
-            while (DateTime.UtcNow.Subtract(startTime).TotalMilliseconds < timeoutMs)
-            {
-                if (IsFileReady(filePath))
-                    return;
-                
-                Thread.Sleep(checkIntervalMs);
-            }
-            
-            throw new TimeoutException($"File was not ready for reading within {timeoutMs}ms: {filePath}");
         }
     }
 }
