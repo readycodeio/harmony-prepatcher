@@ -65,8 +65,8 @@ namespace HarmonyWeaver.Tests
             Assert.Single(patchedFiles);
             Assert.True(File.Exists(outputPath));
 
-            // Load the patched assembly (now has different identity, so no conflicts)
-            var patchedAssembly = Assembly.LoadFrom(outputPath);
+            // Load the patched assembly with Windows-compatible retry logic
+            var patchedAssembly = WindowsAssemblyLoader.LoadFromWithRetry(outputPath);
             Assert.NotNull(patchedAssembly);
 
             var calculatorType = patchedAssembly.GetType("HarmonyWeaver.Examples.Calculator");
@@ -79,7 +79,7 @@ namespace HarmonyWeaver.Tests
             Assert.NotNull(addMethod);
 
             // Clear any previous log entries
-            fileLogger.Clear();
+            globalLogger.Clear();
 
             // Call the patched method
             var result = addMethod.Invoke(calculator, new object[] { 5, 3 });
@@ -87,17 +87,15 @@ namespace HarmonyWeaver.Tests
             // Verify the method returns the correct result
             Assert.Equal(8, result);
 
-
             // Verify the patches were executed by checking the log messages
-            Assert.True(fileLogger.ContainsMessage("[PREFIX] About to add 5 + 3"), 
+            Assert.True(globalLogger.ContainsMessage("[PREFIX] About to add 5 + 3"), 
                 "Prefix patch should have logged the operation");
-            Assert.True(fileLogger.ContainsMessage("[POSTFIX] Addition result: 5 + 3 = 8"), 
+            Assert.True(globalLogger.ContainsMessage("[POSTFIX] Addition result: 5 + 3 = 8"), 
                 "Postfix patch should have logged the result");
             
             // Verify we have at least 2 log entries (prefix + postfix)
-            var logEntries = fileLogger.ReadAllEntries();
-            Assert.True(logEntries.Length >= 2, 
-                $"Expected at least 2 log entries, but got {logEntries.Length}. Entries: {string.Join("; ", logEntries)}");
+            Assert.True(globalLogger.Count >= 2, 
+                $"Expected at least 2 log entries, but got {globalLogger.Count}");
 
             // Clean up
             LoggerProvider.ClearAllLoggers();
@@ -106,12 +104,10 @@ namespace HarmonyWeaver.Tests
         [Fact]
         public void PatchCalculatorMultiply_WithSkipPrefix_ShouldReturnCustomResult()
         {
-            // Arrange - Use unique identifiers to avoid parallel execution conflicts
+            // Arrange - Use global test logger to avoid file I/O issues
             var testId = Guid.NewGuid().ToString("N")[0..8];
-            var logFilePath = Path.Combine(_testOutputDirectory, $"skip_test_{testId}.log");
-            var fileLogger = new FileLogger(logFilePath);
-            LoggerProvider.SetNamedLogger($"skip_test_{testId}", fileLogger);
-            LoggerProvider.SetGlobalLogger(fileLogger);
+            var globalLogger = new GlobalTestLogger($"skip_test_{testId}");
+            LoggerProvider.SetGlobalLogger(globalLogger);
 
             var examplesAssemblyPath = GetAssemblyPath("HarmonyWeaver.Examples.dll");
             var patchesAssemblyPath = GetAssemblyPath("HarmonyWeaver.Tests.Patches.dll");
@@ -135,8 +131,8 @@ namespace HarmonyWeaver.Tests
             Assert.Single(patchedFiles);
             Assert.True(File.Exists(outputPath));
 
-            // Load the patched assembly (different identity, so no conflicts)
-            var patchedAssembly = Assembly.LoadFrom(outputPath);
+            // Load the patched assembly with Windows-compatible retry logic  
+            var patchedAssembly = WindowsAssemblyLoader.LoadFromWithRetry(outputPath);
             var calculatorType = patchedAssembly.GetType("HarmonyWeaver.Examples.Calculator");
             Assert.NotNull(calculatorType);
 
@@ -146,32 +142,32 @@ namespace HarmonyWeaver.Tests
             var multiplyMethod = calculatorType.GetMethod("Multiply");
             var subtractMethod = calculatorType.GetMethod("Subtract");
 
-            fileLogger.Clear();
+            globalLogger.Clear();
 
             // Test: Multiply should return 999 (from prefix) instead of 5 * 3 = 15
             var result = multiplyMethod.Invoke(calculator, new object[] { 5, 3 });
             
             // Verify the skip prefix was called
-            Assert.True(fileLogger.ContainsMessage("[SKIP PREFIX] Multiply(5, 3) - returning custom result"),
+            Assert.True(globalLogger.ContainsMessage("[SKIP PREFIX] Multiply(5, 3) - returning custom result"),
                 "Skip prefix should have logged the custom result message");
 
             // This is the main test - if skip logic works, we should get 999 instead of 15
             Assert.Equal(999, result); // Custom result from prefix, not 15
 
-            fileLogger.Clear();
+            globalLogger.Clear();
 
             // Test conditional skip logic
             // Case 1: Should skip and return 42
             var skipResult = subtractMethod.Invoke(calculator, new object[] { 100, 1 });
-            Assert.True(fileLogger.ContainsMessage("[CONDITIONAL PREFIX] Special case detected, returning 42"),
+            Assert.True(globalLogger.ContainsMessage("[CONDITIONAL PREFIX] Special case detected, returning 42"),
                 "Conditional prefix should have detected the special case");
             Assert.Equal(42, skipResult); // Custom result from prefix
             
-            fileLogger.Clear();
+            globalLogger.Clear();
             
             // Case 2: Should NOT skip and return normal result
             var normalResult = subtractMethod.Invoke(calculator, new object[] { 10, 3 });
-            Assert.True(fileLogger.ContainsMessage("[CONDITIONAL PREFIX] Normal case, continuing with original method"),
+            Assert.True(globalLogger.ContainsMessage("[CONDITIONAL PREFIX] Normal case, continuing with original method"),
                 "Conditional prefix should have detected the normal case");
             Assert.Equal(7, normalResult); // Normal subtraction: 10 - 3 = 7
 
