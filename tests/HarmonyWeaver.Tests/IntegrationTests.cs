@@ -29,8 +29,8 @@ namespace HarmonyWeaver.Tests
             Directory.CreateDirectory(_testOutputDirectory);
 
             // Create the weaver with dependency injection
-            // Use RetryAssemblyLoader for Cecil assemblies (where ProcessPatches fails on Windows)
-            var cecilAssemblyLoader = new RetryAssemblyLoader(maxAttempts: 10, baseDelayMs: 25);
+            // Use FlexibleCecilAssemblyLoader with explicit control over read/write and retries
+            var cecilAssemblyLoader = new FlexibleCecilAssemblyLoader(defaultBaseDelayMs: 25);
             var patchScanner = new PatchScanner();
             var ilWeaver = new ILWeaver();
             var assemblySaver = new AssemblySaver();

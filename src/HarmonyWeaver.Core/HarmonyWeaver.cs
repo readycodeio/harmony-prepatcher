@@ -12,18 +12,18 @@ namespace HarmonyWeaver.Core
     /// </summary>
     public class HarmonyWeaver : IHarmonyWeaver, IDisposable
     {
-        private readonly IAssemblyLoader _assemblyLoader;
+        private readonly ICecilAssemblyLoader _cecilAssemblyLoader;
         private readonly IPatchScanner _patchScanner;
         private readonly IILWeaver _ilWeaver;
         private readonly IAssemblySaver _assemblySaver;
 
         public HarmonyWeaver(
-            IAssemblyLoader assemblyLoader,
+            ICecilAssemblyLoader cecilAssemblyLoader,
             IPatchScanner patchScanner,
             IILWeaver ilWeaver,
             IAssemblySaver assemblySaver)
         {
-            _assemblyLoader = assemblyLoader ?? throw new ArgumentNullException(nameof(assemblyLoader));
+            _cecilAssemblyLoader = cecilAssemblyLoader ?? throw new ArgumentNullException(nameof(cecilAssemblyLoader));
             _patchScanner = patchScanner ?? throw new ArgumentNullException(nameof(patchScanner));
             _ilWeaver = ilWeaver ?? throw new ArgumentNullException(nameof(ilWeaver));
             _assemblySaver = assemblySaver ?? throw new ArgumentNullException(nameof(assemblySaver));
@@ -69,8 +69,8 @@ namespace HarmonyWeaver.Core
 
             try
             {
-                // Step 1: Load patch assemblies
-                var patchAssemblies = _assemblyLoader.LoadAssemblies(patchPaths).ToList();
+                // Step 1: Load patch assemblies (read-only, Windows-compatible)
+                var patchAssemblies = _cecilAssemblyLoader.LoadAssemblies(patchPaths, readWrite: false, maxRetries: 10).ToList();
                 
                 // Step 2: Scan for patches
                 var patches = _patchScanner.ScanForPatches(patchAssemblies).ToList();
@@ -86,8 +86,8 @@ namespace HarmonyWeaver.Core
                     var targetPath = targetPaths[i];
                     var outputPath = outPaths[i];
 
-                    // Load target assembly
-                    var targetAssembly = _assemblyLoader.LoadAssembly(targetPath);
+                    // Load target assembly (read-write for patching)
+                    var targetAssembly = _cecilAssemblyLoader.LoadAssemblyForPatching(targetPath, maxRetries: 10);
                     
                     // Resolve patch targets for this assembly
                     var resolvedPatches = _patchScanner.ResolveTargets(patches, new[] { targetAssembly }).ToList();
@@ -120,7 +120,7 @@ namespace HarmonyWeaver.Core
 
         public void Dispose()
         {
-            _assemblyLoader?.Dispose();
+            _cecilAssemblyLoader?.Dispose();
         }
     }
 }

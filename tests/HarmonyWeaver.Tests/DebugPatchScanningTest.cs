@@ -24,7 +24,7 @@ namespace HarmonyWeaver.Tests
         public void DebugPatchScanning_ShouldShowWhatAttributesAreFound()
         {
             // Arrange
-            var assemblyLoader = new AssemblyLoader();
+            var cecilAssemblyLoader = new FlexibleCecilAssemblyLoader();
             var patchScanner = new PatchScanner();
             
             var patchesAssemblyPath = GetAssemblyPath("HarmonyWeaver.Tests.Patches.dll");
@@ -38,7 +38,7 @@ namespace HarmonyWeaver.Tests
             _output.WriteLine($"Loading patches from: {patchesAssemblyPath}");
 
             // Act
-            var patchAssembly = assemblyLoader.LoadAssembly(patchesAssemblyPath);
+            var patchAssembly = cecilAssemblyLoader.LoadAssemblyForScanning(patchesAssemblyPath, maxRetries: 10);
             _output.WriteLine($"Loaded assembly: {patchAssembly.FullName}");
 
             // Debug: Look at the types and their attributes

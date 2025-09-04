@@ -22,12 +22,12 @@ namespace HarmonyWeaver.Tests
             Directory.CreateDirectory(_testOutputDirectory);
 
             // Create the weaver with default implementations
-            var assemblyLoader = new AssemblyLoader();
+            var cecilAssemblyLoader = new FlexibleCecilAssemblyLoader();
             var patchScanner = new PatchScanner();
             var ilWeaver = new ILWeaver();
             var assemblySaver = new AssemblySaver();
 
-            _harmonyWeaver = new Core.HarmonyWeaver(assemblyLoader, patchScanner, ilWeaver, assemblySaver);
+            _harmonyWeaver = new Core.HarmonyWeaver(cecilAssemblyLoader, patchScanner, ilWeaver, assemblySaver);
         }
 
         [Fact]
