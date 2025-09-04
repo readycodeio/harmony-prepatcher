@@ -63,20 +63,54 @@ namespace HarmonyWeaver.Core.Implementation
 
         private IEnumerable<PatchInfo> ScanTypeForPatches(TypeDefinition type, AssemblyDefinition assembly)
         {
-            var patches = new List<PatchInfo>();
+            var patches = new Dictionary<string, PatchInfo>(); // Key: "TypeName.MethodName"
 
-            // Look for HarmonyPatch attributes on the type
-            var harmonyPatchAttributes = GetHarmonyPatchAttributes(type);
-            
-            foreach (var patchAttr in harmonyPatchAttributes)
+            // Get type-level HarmonyPatch attributes (these define the target type)
+            var typeLevelPatches = GetHarmonyPatchAttributesFromType(type);
+
+            // Get method-level patches
+            foreach (var method in type.Methods)
             {
-                // Create a patch info with stub target information
-                // The actual target resolution will happen later
-                var patchInfo = new PatchInfo(null!, null!, patchAttr);
-
-                // Look for Prefix, Postfix, and Finalizer methods in this type
-                foreach (var method in type.Methods)
+                var methodLevelPatches = GetHarmonyPatchAttributesFromMethod(method);
+                
+                // Combine type-level and method-level patch information
+                var combinedPatches = new List<HarmonyPatchAttribute>();
+                
+                if (methodLevelPatches.Any())
                 {
+                    // Method has its own patch attributes
+                    foreach (var methodPatch in methodLevelPatches)
+                    {
+                        // If method patch doesn't specify target type, inherit from type-level
+                        if (string.IsNullOrEmpty(methodPatch.TargetTypeName) && typeLevelPatches.Any())
+                        {
+                            methodPatch.TargetTypeName = typeLevelPatches[0].TargetTypeName;
+                        }
+                        combinedPatches.Add(methodPatch);
+                    }
+                }
+                else if (typeLevelPatches.Any())
+                {
+                    // No method-level patches, use type-level patches
+                    combinedPatches.AddRange(typeLevelPatches);
+                }
+
+                // Process each combined patch
+                foreach (var patchAttr in combinedPatches)
+                {
+                    if (string.IsNullOrEmpty(patchAttr.TargetTypeName))
+                        continue;
+
+                    var key = $"{patchAttr.TargetTypeName}.{patchAttr.MethodName ?? ""}";
+                    
+                    // Get or create patch info
+                    if (!patches.TryGetValue(key, out var patchInfo))
+                    {
+                        patchInfo = new PatchInfo(null!, null!, patchAttr);
+                        patches[key] = patchInfo;
+                    }
+
+                    // Add the appropriate patch method
                     if (IsPrefix(method))
                     {
                         patchInfo.Prefix = new PatchMethodInfo(method, type, assembly);
@@ -93,46 +127,155 @@ namespace HarmonyWeaver.Core.Implementation
                         AnalyzePatchMethodParameters(patchInfo.Finalizer);
                     }
                 }
-
-                // Only add patches that have at least one patch method
-                if (patchInfo.Prefix != null || patchInfo.Postfix != null || patchInfo.Finalizer != null)
-                {
-                    patches.Add(patchInfo);
-                }
             }
 
-            return patches;
+            // Return only patches that have at least one patch method
+            return patches.Values.Where(p => p.Prefix != null || p.Postfix != null || p.Finalizer != null);
         }
 
-        private List<HarmonyPatchAttribute> GetHarmonyPatchAttributes(TypeDefinition type)
+        private List<HarmonyPatchAttribute> GetHarmonyPatchAttributesFromType(TypeDefinition type)
         {
             var attributes = new List<HarmonyPatchAttribute>();
 
-            // TODO: Parse actual HarmonyPatch attributes from the type
-            // For now, return empty list - this will be implemented in the next step
-            // This is a stub implementation
+            foreach (var attr in type.CustomAttributes)
+            {
+                if (attr.AttributeType.Name == "HarmonyPatchAttribute" || 
+                    attr.AttributeType.Name == "HarmonyPatch")
+                {
+                    var harmonyPatch = ParseHarmonyPatchAttribute(attr);
+                    if (harmonyPatch != null)
+                    {
+                        attributes.Add(harmonyPatch);
+                    }
+                }
+            }
 
             return attributes;
         }
 
+        private List<HarmonyPatchAttribute> GetHarmonyPatchAttributesFromMethod(MethodDefinition method)
+        {
+            var attributes = new List<HarmonyPatchAttribute>();
+
+            foreach (var attr in method.CustomAttributes)
+            {
+                if (attr.AttributeType.Name == "HarmonyPatchAttribute" || 
+                    attr.AttributeType.Name == "HarmonyPatch")
+                {
+                    var harmonyPatch = ParseHarmonyPatchAttribute(attr);
+                    if (harmonyPatch != null)
+                    {
+                        attributes.Add(harmonyPatch);
+                    }
+                }
+            }
+
+            return attributes;
+        }
+
+
+        private HarmonyPatchAttribute? ParseHarmonyPatchAttribute(CustomAttribute attr)
+        {
+            var harmonyPatch = new HarmonyPatchAttribute();
+
+            // Parse constructor arguments
+            if (attr.HasConstructorArguments)
+            {
+                for (int i = 0; i < attr.ConstructorArguments.Count; i++)
+                {
+                    var arg = attr.ConstructorArguments[i];
+                    
+                    if (arg.Type.Name == "Type")
+                    {
+                        // Argument is the target type
+                        if (arg.Value is TypeDefinition targetType)
+                        {
+                            harmonyPatch.TargetTypeName = targetType.FullName;
+                        }
+                        else if (arg.Value is TypeReference targetTypeRef)
+                        {
+                            harmonyPatch.TargetTypeName = targetTypeRef.FullName;
+                        }
+                    }
+                    else if (arg.Type.Name == "String")
+                    {
+                        // String argument is usually the method name
+                        harmonyPatch.MethodName = arg.Value?.ToString();
+                    }
+                }
+            }
+
+            // Parse named properties
+            if (attr.HasProperties)
+            {
+                foreach (var prop in attr.Properties)
+                {
+                    switch (prop.Name)
+                    {
+                        case "MethodName":
+                            harmonyPatch.MethodName = prop.Argument.Value?.ToString();
+                            break;
+                        case "MethodType":
+                            if (Enum.TryParse<MethodType>(prop.Argument.Value?.ToString(), out var methodType))
+                            {
+                                harmonyPatch.MethodType = methodType;
+                            }
+                            break;
+                        default:
+                            harmonyPatch.Properties[prop.Name] = prop.Argument.Value;
+                            break;
+                    }
+                }
+            }
+
+            return harmonyPatch;
+        }
+
         private bool IsPrefix(MethodDefinition method)
         {
-            // TODO: Check for HarmonyPrefix attribute or naming convention
-            // For now, use naming convention
+            // Check for HarmonyPrefix attribute
+            foreach (var attr in method.CustomAttributes)
+            {
+                if (attr.AttributeType.Name == "HarmonyPrefixAttribute" || 
+                    attr.AttributeType.Name == "HarmonyPrefix")
+                {
+                    return true;
+                }
+            }
+
+            // Fallback to naming convention
             return method.Name == "Prefix" || method.Name.EndsWith("Prefix");
         }
 
         private bool IsPostfix(MethodDefinition method)
         {
-            // TODO: Check for HarmonyPostfix attribute or naming convention
-            // For now, use naming convention
+            // Check for HarmonyPostfix attribute
+            foreach (var attr in method.CustomAttributes)
+            {
+                if (attr.AttributeType.Name == "HarmonyPostfixAttribute" || 
+                    attr.AttributeType.Name == "HarmonyPostfix")
+                {
+                    return true;
+                }
+            }
+
+            // Fallback to naming convention
             return method.Name == "Postfix" || method.Name.EndsWith("Postfix");
         }
 
         private bool IsFinalizer(MethodDefinition method)
         {
-            // TODO: Check for HarmonyFinalizer attribute or naming convention
-            // For now, use naming convention
+            // Check for HarmonyFinalizer attribute
+            foreach (var attr in method.CustomAttributes)
+            {
+                if (attr.AttributeType.Name == "HarmonyFinalizerAttribute" || 
+                    attr.AttributeType.Name == "HarmonyFinalizer")
+                {
+                    return true;
+                }
+            }
+
+            // Fallback to naming convention
             return method.Name == "Finalizer" || method.Name.EndsWith("Finalizer");
         }
 
@@ -145,9 +288,88 @@ namespace HarmonyWeaver.Core.Implementation
 
         private PatchInfo? ResolveTargetForPatch(PatchInfo patch, List<AssemblyDefinition> targetAssemblies)
         {
-            // TODO: Implement target resolution logic
-            // This should find the actual target type and method based on the patch attribute information
-            // For now, return null (no targets resolved)
+            if (patch.PatchAttribute.TargetTypeName == null)
+                return null;
+
+            // Find the target type in the target assemblies
+            TypeDefinition? targetType = null;
+            foreach (var assembly in targetAssemblies)
+            {
+                targetType = FindTypeByName(assembly, patch.PatchAttribute.TargetTypeName);
+                if (targetType != null)
+                    break;
+            }
+
+            if (targetType == null)
+                return null;
+
+            // Find the target method
+            MethodDefinition? targetMethod = null;
+            if (!string.IsNullOrEmpty(patch.PatchAttribute.MethodName))
+            {
+                targetMethod = FindMethodByName(targetType, patch.PatchAttribute.MethodName);
+            }
+
+            if (targetMethod == null)
+                return null;
+
+            // Create a new patch info with resolved targets
+            var resolvedPatch = new PatchInfo(targetType, targetMethod, patch.PatchAttribute)
+            {
+                Prefix = patch.Prefix,
+                Postfix = patch.Postfix,
+                Finalizer = patch.Finalizer
+            };
+
+            return resolvedPatch;
+        }
+
+        private TypeDefinition? FindTypeByName(AssemblyDefinition assembly, string typeName)
+        {
+            // Direct lookup
+            foreach (var type in assembly.MainModule.Types)
+            {
+                if (type.FullName == typeName || type.Name == typeName)
+                {
+                    return type;
+                }
+
+                // Check nested types
+                var nestedType = FindNestedTypeByName(type, typeName);
+                if (nestedType != null)
+                    return nestedType;
+            }
+
+            return null;
+        }
+
+        private TypeDefinition? FindNestedTypeByName(TypeDefinition parentType, string typeName)
+        {
+            foreach (var nestedType in parentType.NestedTypes)
+            {
+                if (nestedType.FullName == typeName || nestedType.Name == typeName)
+                {
+                    return nestedType;
+                }
+
+                var deeperNested = FindNestedTypeByName(nestedType, typeName);
+                if (deeperNested != null)
+                    return deeperNested;
+            }
+
+            return null;
+        }
+
+        private MethodDefinition? FindMethodByName(TypeDefinition type, string methodName)
+        {
+            foreach (var method in type.Methods)
+            {
+                if (method.Name == methodName)
+                {
+                    return method;
+                }
+            }
+
             return null;
         }
     }
