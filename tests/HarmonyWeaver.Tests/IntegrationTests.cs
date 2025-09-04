@@ -61,20 +61,24 @@ namespace HarmonyWeaver.Tests
             Assert.Single(patchedFiles);
             Assert.True(File.Exists(outputPath));
 
-            // Load the patched assembly in an isolated context to avoid conflicts
-            using var patchedExecutor = new PatchedAssemblyExecutor(outputPath);
-            
-            var calculatorType = patchedExecutor.GetType("HarmonyWeaver.Examples.Calculator");
+            // Load the patched assembly (now has different identity, so no conflicts)
+            var patchedAssembly = Assembly.LoadFrom(outputPath);
+            Assert.NotNull(patchedAssembly);
+
+            var calculatorType = patchedAssembly.GetType("HarmonyWeaver.Examples.Calculator");
             Assert.NotNull(calculatorType);
 
-            var calculator = patchedExecutor.CreateInstance(calculatorType);
+            var calculator = Activator.CreateInstance(calculatorType);
             Assert.NotNull(calculator);
+
+            var addMethod = calculatorType.GetMethod("Add");
+            Assert.NotNull(addMethod);
 
             // Clear any previous log entries
             fileLogger.Clear();
 
-            // Call the patched method using the isolated executor
-            var result = patchedExecutor.InvokeMethod(calculator, "Add", 5, 3);
+            // Call the patched method
+            var result = addMethod.Invoke(calculator, new object[] { 5, 3 });
             
             // Verify the method returns the correct result
             Assert.Equal(8, result);
@@ -126,19 +130,21 @@ namespace HarmonyWeaver.Tests
             Assert.Single(patchedFiles);
             Assert.True(File.Exists(outputPath));
 
-            // Load the patched assembly in an isolated context
-            using var patchedExecutor = new PatchedAssemblyExecutor(outputPath);
-            
-            var calculatorType = patchedExecutor.GetType("HarmonyWeaver.Examples.Calculator");
+            // Load the patched assembly (different identity, so no conflicts)
+            var patchedAssembly = Assembly.LoadFrom(outputPath);
+            var calculatorType = patchedAssembly.GetType("HarmonyWeaver.Examples.Calculator");
             Assert.NotNull(calculatorType);
 
-            var calculator = patchedExecutor.CreateInstance(calculatorType);
+            var calculator = Activator.CreateInstance(calculatorType);
             Assert.NotNull(calculator);
+
+            var multiplyMethod = calculatorType.GetMethod("Multiply");
+            var subtractMethod = calculatorType.GetMethod("Subtract");
 
             testLogger.Clear();
 
             // Test: Multiply should return 999 (from prefix) instead of 5 * 3 = 15
-            var result = patchedExecutor.InvokeMethod(calculator, "Multiply", 5, 3);
+            var result = multiplyMethod.Invoke(calculator, new object[] { 5, 3 });
             
             // Verify the skip prefix was called
             Assert.True(testLogger.ContainsMessage("[SKIP PREFIX] Multiply(5, 3) - returning custom result"),
@@ -151,7 +157,7 @@ namespace HarmonyWeaver.Tests
 
             // Test conditional skip logic
             // Case 1: Should skip and return 42
-            var skipResult = patchedExecutor.InvokeMethod(calculator, "Subtract", 100, 1);
+            var skipResult = subtractMethod.Invoke(calculator, new object[] { 100, 1 });
             Assert.True(testLogger.ContainsMessage("[CONDITIONAL PREFIX] Special case detected, returning 42"),
                 "Conditional prefix should have detected the special case");
             Assert.Equal(42, skipResult); // Custom result from prefix
@@ -159,7 +165,7 @@ namespace HarmonyWeaver.Tests
             testLogger.Clear();
             
             // Case 2: Should NOT skip and return normal result
-            var normalResult = patchedExecutor.InvokeMethod(calculator, "Subtract", 10, 3);
+            var normalResult = subtractMethod.Invoke(calculator, new object[] { 10, 3 });
             Assert.True(testLogger.ContainsMessage("[CONDITIONAL PREFIX] Normal case, continuing with original method"),
                 "Conditional prefix should have detected the normal case");
             Assert.Equal(7, normalResult); // Normal subtraction: 10 - 3 = 7
