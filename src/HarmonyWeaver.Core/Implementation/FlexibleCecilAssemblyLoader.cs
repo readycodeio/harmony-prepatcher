@@ -31,7 +31,14 @@ namespace HarmonyWeaver.Core.Implementation
 
         public AssemblyDefinition LoadAssembly(string assemblyPath, bool readWrite = true, int maxRetries = 5)
         {
-            var parameters = CreateReaderParameters(readWrite);
+            // Create ReaderParameters based on the explicit arguments passed to this method
+            var parameters = new ReaderParameters
+            {
+                ReadWrite = readWrite,  // Use the explicit readWrite argument
+                InMemory = true,        // Always load into memory for better performance
+                ReadingMode = ReadingMode.Immediate
+            };
+            
             return LoadAssemblyWithRetry(assemblyPath, parameters, maxRetries, readWrite ? "read-write" : "read-only");
         }
 
@@ -60,15 +67,6 @@ namespace HarmonyWeaver.Core.Implementation
             return LoadAssembly(assemblyPath, readWrite: true, maxRetries: maxRetries);
         }
 
-        private ReaderParameters CreateReaderParameters(bool readWrite)
-        {
-            return new ReaderParameters
-            {
-                ReadWrite = readWrite,
-                InMemory = true,    // Load into memory to release file handle quickly
-                ReadingMode = ReadingMode.Immediate
-            };
-        }
 
         private AssemblyDefinition LoadAssemblyWithRetry(string assemblyPath, ReaderParameters parameters, int maxRetries, string mode)
         {
