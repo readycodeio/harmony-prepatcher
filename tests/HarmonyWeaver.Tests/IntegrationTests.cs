@@ -1,7 +1,6 @@
 using HarmonyWeaver.Core;
 using HarmonyWeaver.Core.Implementation;
 using HarmonyWeaver.Core.Interfaces;
-using HarmonyWeaver.Core.Loading;
 using HarmonyWeaver.Core.Logging;
 using System;
 using System.IO;

@@ -5,6 +5,33 @@ using System.Linq;
 namespace HarmonyWeaver.Core.Logging
 {
     /// <summary>
+    /// Represents a log entry
+    /// </summary>
+    public class LogEntry
+    {
+        public LogLevel Level { get; }
+        public string Message { get; }
+
+        public LogEntry(LogLevel level, string message)
+        {
+            Level = level;
+            Message = message;
+        }
+
+        public override string ToString() => $"[{Level}] {Message}";
+    }
+
+    /// <summary>
+    /// Log levels
+    /// </summary>
+    public enum LogLevel
+    {
+        Info,
+        Warning,
+        Error
+    }
+
+    /// <summary>
     /// Global test logger that works across assembly boundaries using static concurrent collections
     /// This avoids file I/O issues while providing cross-assembly logging capability
     /// </summary>
