@@ -1,5 +1,6 @@
 using HarmonyWeaver.Core;
 using HarmonyWeaver.Core.Implementation;
+using HarmonyWeaver.Core.Interfaces;
 using HarmonyWeaver.Core.Loading;
 using HarmonyWeaver.Core.Logging;
 using System;
@@ -18,6 +19,7 @@ namespace HarmonyWeaver.Tests
     {
         private readonly string _testOutputDirectory;
         private readonly Core.HarmonyWeaver _harmonyWeaver;
+        private readonly IRuntimeAssemblyLoader _runtimeAssemblyLoader;
 
         public IntegrationTests()
         {
@@ -26,13 +28,16 @@ namespace HarmonyWeaver.Tests
             _testOutputDirectory = Path.Combine(Path.GetTempPath(), "HarmonyWeaverIntegrationTests", uniqueId);
             Directory.CreateDirectory(_testOutputDirectory);
 
-            // Create the weaver with default implementations
-            var assemblyLoader = new AssemblyLoader();
+            // Create the weaver with dependency injection
+            var cecilAssemblyLoader = new AssemblyLoader(); // For Mono.Cecil assemblies
             var patchScanner = new PatchScanner();
             var ilWeaver = new ILWeaver();
             var assemblySaver = new AssemblySaver();
 
-            _harmonyWeaver = new Core.HarmonyWeaver(assemblyLoader, patchScanner, ilWeaver, assemblySaver);
+            // Use RetryAssemblyLoader with 10 retries for Windows compatibility
+            _runtimeAssemblyLoader = new RetryRuntimeAssemblyLoader(maxAttempts: 10, baseDelayMs: 25);
+
+            _harmonyWeaver = new Core.HarmonyWeaver(cecilAssemblyLoader, patchScanner, ilWeaver, assemblySaver);
         }
 
         [Fact]
@@ -65,8 +70,8 @@ namespace HarmonyWeaver.Tests
             Assert.Single(patchedFiles);
             Assert.True(File.Exists(outputPath));
 
-            // Load the patched assembly with Windows-compatible retry logic
-            var patchedAssembly = WindowsAssemblyLoader.LoadFromWithRetry(outputPath);
+            // Load the patched assembly using the injected runtime assembly loader
+            var patchedAssembly = _runtimeAssemblyLoader.LoadAssembly(outputPath);
             Assert.NotNull(patchedAssembly);
 
             var calculatorType = patchedAssembly.GetType("HarmonyWeaver.Examples.Calculator");
@@ -131,8 +136,8 @@ namespace HarmonyWeaver.Tests
             Assert.Single(patchedFiles);
             Assert.True(File.Exists(outputPath));
 
-            // Load the patched assembly with Windows-compatible retry logic  
-            var patchedAssembly = WindowsAssemblyLoader.LoadFromWithRetry(outputPath);
+            // Load the patched assembly using the injected runtime assembly loader
+            var patchedAssembly = _runtimeAssemblyLoader.LoadAssembly(outputPath);
             var calculatorType = patchedAssembly.GetType("HarmonyWeaver.Examples.Calculator");
             Assert.NotNull(calculatorType);
 

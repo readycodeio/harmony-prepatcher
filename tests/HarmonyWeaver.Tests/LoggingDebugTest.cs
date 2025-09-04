@@ -1,5 +1,6 @@
 using HarmonyWeaver.Core;
 using HarmonyWeaver.Core.Implementation;
+using HarmonyWeaver.Core.Interfaces;
 using HarmonyWeaver.Core.Logging;
 using System;
 using System.IO;
@@ -18,6 +19,7 @@ namespace HarmonyWeaver.Tests
         private readonly ITestOutputHelper _output;
         private readonly string _testOutputDirectory;
         private readonly Core.HarmonyWeaver _harmonyWeaver;
+        private readonly IRuntimeAssemblyLoader _runtimeAssemblyLoader;
 
         public LoggingDebugTest(ITestOutputHelper output)
         {
@@ -26,12 +28,15 @@ namespace HarmonyWeaver.Tests
             _testOutputDirectory = Path.Combine(Path.GetTempPath(), "HarmonyWeaverLoggingDebug", uniqueId);
             Directory.CreateDirectory(_testOutputDirectory);
 
-            var assemblyLoader = new AssemblyLoader();
+            var cecilAssemblyLoader = new AssemblyLoader(); // For Mono.Cecil
             var patchScanner = new PatchScanner();
             var ilWeaver = new ILWeaver();
             var assemblySaver = new AssemblySaver();
 
-            _harmonyWeaver = new Core.HarmonyWeaver(assemblyLoader, patchScanner, ilWeaver, assemblySaver);
+            // Use RetryAssemblyLoader with 10 retries for Windows compatibility
+            _runtimeAssemblyLoader = new RetryRuntimeAssemblyLoader(maxAttempts: 10, baseDelayMs: 25);
+
+            _harmonyWeaver = new Core.HarmonyWeaver(cecilAssemblyLoader, patchScanner, ilWeaver, assemblySaver);
         }
 
         [Fact]
@@ -65,8 +70,8 @@ namespace HarmonyWeaver.Tests
 
             _output.WriteLine($"Patched files: {string.Join(", ", patchedFiles)}");
 
-            // Load the patched assembly
-            var patchedAssembly = Assembly.LoadFrom(outputPath);
+            // Load the patched assembly using the injected runtime assembly loader
+            var patchedAssembly = _runtimeAssemblyLoader.LoadAssembly(outputPath);
             var calculatorType = patchedAssembly.GetType("HarmonyWeaver.Examples.Calculator");
             var calculator = Activator.CreateInstance(calculatorType);
             var addMethod = calculatorType.GetMethod("Add");
