@@ -38,12 +38,10 @@ namespace HarmonyWeaver.Tests
         [Fact]
         public void PatchCalculatorAdd_WithPrefixAndPostfix_ShouldWork()
         {
-            // Arrange - Use unique logger name to avoid conflicts in parallel execution
+            // Arrange - Use global test logger to avoid file I/O issues
             var testId = Guid.NewGuid().ToString("N")[0..8];
-            var logFilePath = Path.Combine(_testOutputDirectory, $"patch_test_{testId}.log");
-            var fileLogger = new FileLogger(logFilePath);
-            LoggerProvider.SetNamedLogger($"test_{testId}", fileLogger);
-            LoggerProvider.SetGlobalLogger(fileLogger); // Also set as global for this test
+            var globalLogger = new GlobalTestLogger($"test_{testId}");
+            LoggerProvider.SetGlobalLogger(globalLogger);
 
             var examplesAssemblyPath = GetAssemblyPath("HarmonyWeaver.Examples.dll");
             var patchesAssemblyPath = GetAssemblyPath("HarmonyWeaver.Tests.Patches.dll");

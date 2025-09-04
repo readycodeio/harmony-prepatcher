@@ -76,6 +76,7 @@ namespace HarmonyWeaver.Core.Logging
             _threadLocalLogger.Value = null;
             _globalLogger = null;
             _namedLoggers.Clear();
+            GlobalTestLogger.ClearAllGlobalLogs();
         }
     }
 

@@ -40,19 +40,36 @@ namespace HarmonyWeaver.Core.Logging
 
         private void WriteToFile(string logEntry)
         {
-            try
+            // Retry logic for Windows file locking issues
+            var maxAttempts = 3;
+            var baseDelay = 10; // Start with 10ms
+            
+            for (int attempt = 0; attempt < maxAttempts; attempt++)
             {
-                lock (_lockObject)
+                try
                 {
-                    // Use synchronous file operations with explicit flushing
-                    using var writer = new StreamWriter(_logFilePath, append: true);
-                    writer.WriteLine(logEntry);
-                    writer.Flush(); // Ensure data is written immediately
+                    lock (_lockObject)
+                    {
+                        // Use FileStream with explicit control over file sharing and flushing
+                        using var fileStream = new FileStream(_logFilePath, FileMode.Append, FileAccess.Write, FileShare.Read);
+                        using var writer = new StreamWriter(fileStream);
+                        writer.WriteLine(logEntry);
+                        writer.Flush();
+                        fileStream.Flush(true); // Force OS-level flush
+                    }
+                    return; // Success, exit retry loop
                 }
-            }
-            catch
-            {
-                // Ignore logging errors to avoid breaking the main functionality
+                catch (IOException) when (attempt < maxAttempts - 1)
+                {
+                    // File might be locked, wait briefly and retry
+                    // Use exponential backoff: 10ms, 20ms, 40ms
+                    System.Threading.Thread.Sleep(baseDelay * (1 << attempt));
+                }
+                catch
+                {
+                    // Other exceptions or final attempt - ignore to avoid breaking main functionality
+                    return;
+                }
             }
         }
 
