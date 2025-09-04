@@ -15,7 +15,8 @@ namespace HarmonyWeaver.Core.Implementation
     public class RetryAssemblyLoader : IAssemblyLoader
     {
         private readonly List<AssemblyDefinition> _loadedAssemblies = new List<AssemblyDefinition>();
-        private readonly ReaderParameters _readerParameters;
+        private readonly ReaderParameters _readOnlyParameters;
+        private readonly ReaderParameters _readWriteParameters;
         private readonly int _maxAttempts;
         private readonly int _baseDelayMs;
 
@@ -34,11 +35,18 @@ namespace HarmonyWeaver.Core.Implementation
             _maxAttempts = maxAttempts;
             _baseDelayMs = baseDelayMs;
             
-            // Use read-only parameters since we're only scanning patch assemblies, not modifying them
-            // This should reduce file locking conflicts on Windows
-            _readerParameters = new ReaderParameters
+            // Read-only parameters for patch assemblies (scanning only)
+            _readOnlyParameters = new ReaderParameters
             {
-                ReadWrite = false,  // Read-only - we don't modify patch assemblies
+                ReadWrite = false,  // Read-only - reduces file locking conflicts
+                InMemory = true,    // Load into memory to release file handle quickly
+                ReadingMode = ReadingMode.Immediate
+            };
+
+            // Read-write parameters for target assemblies (need patching)
+            _readWriteParameters = new ReaderParameters
+            {
+                ReadWrite = true,   // Required for patching target assemblies
                 InMemory = true,    // Load into memory to release file handle quickly
                 ReadingMode = ReadingMode.Immediate
             };
@@ -46,25 +54,21 @@ namespace HarmonyWeaver.Core.Implementation
 
         public AssemblyDefinition LoadAssembly(string assemblyPath)
         {
-            // For target assemblies that need patching, we need read-write access
-            // Try with sharing-friendly file stream first
-            return LoadAssemblyWithSharedStream(assemblyPath);
-        }
-
-        /// <summary>
-        /// Load assembly for patching (requires read-write access)
-        /// </summary>
-        public AssemblyDefinition LoadAssemblyForPatching(string assemblyPath)
-        {
-            return LoadAssemblyWithParameters(assemblyPath, _readWriteParameters, "read-write");
-        }
-
-        /// <summary>
-        /// Load assembly for reading only (scanning patches, less likely to conflict)
-        /// </summary>
-        public AssemblyDefinition LoadAssemblyForReading(string assemblyPath)
-        {
-            return LoadAssemblyWithParameters(assemblyPath, _readOnlyParameters, "read-only");
+            // Try read-only first (for patch assemblies), then read-write if needed (for target assemblies)
+            try
+            {
+                return LoadAssemblyWithParameters(assemblyPath, _readOnlyParameters, "read-only");
+            }
+            catch (InvalidOperationException) when (assemblyPath.Contains("patch", StringComparison.OrdinalIgnoreCase))
+            {
+                // If it's a patch assembly and read-only failed, don't try read-write
+                throw;
+            }
+            catch (InvalidOperationException)
+            {
+                // If it's likely a target assembly, try read-write mode
+                return LoadAssemblyWithParameters(assemblyPath, _readWriteParameters, "read-write");
+            }
         }
 
         private AssemblyDefinition LoadAssemblyWithParameters(string assemblyPath, ReaderParameters parameters, string mode)
