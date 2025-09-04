@@ -95,6 +95,9 @@ namespace HarmonyWeaver.Core.Implementation
             }
 
             // Load arguments for the prefix method
+            // We need to map prefix parameters to target method parameters correctly
+            int targetParamIndex = 0;
+            
             foreach (var param in prefixParams)
             {
                 if (param.Name == "__result" && param.ParameterType.IsByReference)
@@ -102,14 +105,22 @@ namespace HarmonyWeaver.Core.Implementation
                     // Load address of result variable
                     il.InsertBefore(firstInstruction, il.Create(OpCodes.Ldloca, resultVariable));
                 }
+                else if (param.Name == "__instance")
+                {
+                    // Load 'this' for instance methods, skip for static methods
+                    if (!targetMethod.IsStatic)
+                    {
+                        il.InsertBefore(firstInstruction, il.Create(OpCodes.Ldarg_0));
+                    }
+                }
                 else
                 {
-                    // Load regular parameters (assuming they match original method parameters)
-                    // For now, simplified: load parameters in order
-                    var paramIndex = param.Index;
-                    if (paramIndex < targetMethod.Parameters.Count)
+                    // Regular parameter - map to target method parameters by position
+                    // Skip special parameters when mapping
+                    if (targetParamIndex < targetMethod.Parameters.Count)
                     {
-                        il.InsertBefore(firstInstruction, il.Create(OpCodes.Ldarg, paramIndex + (targetMethod.IsStatic ? 0 : 1)));
+                        il.InsertBefore(firstInstruction, il.Create(OpCodes.Ldarg, targetParamIndex + (targetMethod.IsStatic ? 0 : 1)));
+                        targetParamIndex++;
                     }
                 }
             }
@@ -172,6 +183,14 @@ namespace HarmonyWeaver.Core.Implementation
             var il = targetMethod.Body.GetILProcessor();
             var postfixMethodRef = targetMethod.Module.ImportReference(postfixInfo.Method);
 
+            // Create a single local variable for the result (shared across all return points)
+            VariableDefinition? resultLocal = null;
+            if (targetMethod.ReturnType.Name != "Void")
+            {
+                resultLocal = new VariableDefinition(targetMethod.ReturnType);
+                targetMethod.Body.Variables.Add(resultLocal);
+            }
+
             // Find all return instructions and insert postfix calls before them
             var returnInstructions = targetMethod.Body.Instructions
                 .Where(i => i.OpCode == OpCodes.Ret)
@@ -180,14 +199,9 @@ namespace HarmonyWeaver.Core.Implementation
             foreach (var retInstruction in returnInstructions)
             {
                 // For methods with return values, we need to handle the result
-                if (targetMethod.ReturnType.Name != "Void")
+                if (targetMethod.ReturnType.Name != "Void" && resultLocal != null)
                 {
-                    // Duplicate the return value so we can pass it to postfix and still return it
-                    il.InsertBefore(retInstruction, il.Create(OpCodes.Dup));
-                    
-                    // Store the return value in a local variable
-                    var resultLocal = new VariableDefinition(targetMethod.ReturnType);
-                    targetMethod.Body.Variables.Add(resultLocal);
+                    // Store the return value that's currently on the stack
                     il.InsertBefore(retInstruction, il.Create(OpCodes.Stloc, resultLocal));
                     
                     // Load arguments for postfix (original parameters + result)
@@ -199,10 +213,10 @@ namespace HarmonyWeaver.Core.Implementation
                     // Load the result for __result parameter
                     il.InsertBefore(retInstruction, il.Create(OpCodes.Ldloc, resultLocal));
                     
-                    // Call postfix
+                    // Call postfix (this consumes all arguments from stack)
                     il.InsertBefore(retInstruction, il.Create(OpCodes.Call, postfixMethodRef));
                     
-                    // Reload the return value
+                    // Reload the return value for the ret instruction
                     il.InsertBefore(retInstruction, il.Create(OpCodes.Ldloc, resultLocal));
                 }
                 else
@@ -213,6 +227,7 @@ namespace HarmonyWeaver.Core.Implementation
                         il.InsertBefore(retInstruction, il.Create(OpCodes.Ldarg, i + (targetMethod.IsStatic ? 0 : 1)));
                     }
                     
+                    // Call postfix (this consumes all arguments from stack)
                     il.InsertBefore(retInstruction, il.Create(OpCodes.Call, postfixMethodRef));
                 }
             }
