@@ -27,6 +27,14 @@ namespace HarmonyWeaver.Core.Implementation
                     Directory.CreateDirectory(directory);
                 }
 
+                // Modify the assembly name to avoid conflicts when loading
+                // This ensures the patched assembly has a different identity
+                var originalName = assembly.Name.Name;
+                assembly.Name.Name = originalName + "_Patched";
+                
+                // Also update the main module name
+                assembly.MainModule.Name = assembly.Name.Name + ".dll";
+
                 // Write the assembly
                 assembly.Write(outputPath);
             }
