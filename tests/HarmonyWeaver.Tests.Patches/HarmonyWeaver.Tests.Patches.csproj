@@ -12,6 +12,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\examples\HarmonyWeaver.Examples\HarmonyWeaver.Examples.csproj" />
+    <ProjectReference Include="..\..\src\HarmonyWeaver.Core\HarmonyWeaver.Core.csproj" />
   </ItemGroup>
 
 </Project>

@@ -1,4 +1,5 @@
 using HarmonyLib;
+using HarmonyWeaver.Core.Logging;
 using System;
 
 namespace HarmonyWeaver.Tests.Patches
@@ -16,7 +17,7 @@ namespace HarmonyWeaver.Tests.Patches
         [HarmonyPrefix]
         public static void ProcessStringPrefix(string input)
         {
-            Console.WriteLine($"[PREFIX] Processing string: '{input ?? "<null>"}'");
+            LoggerProvider.Logger.LogInfo($"[PREFIX] Processing string: '{input ?? "<null>"}'");
         }
 
         /// <summary>
@@ -26,12 +27,13 @@ namespace HarmonyWeaver.Tests.Patches
         [HarmonyPostfix]
         public static void ProcessStringPostfix(string input, ref string __result)
         {
-            Console.WriteLine($"[POSTFIX] String processing result: '{__result}'");
+            LoggerProvider.Logger.LogInfo($"[POSTFIX] String processing result: '{__result}'");
             
             // Example modification: add a prefix to all processed strings
             if (!string.IsNullOrEmpty(__result))
             {
                 __result = "[PROCESSED] " + __result;
+                LoggerProvider.Logger.LogInfo($"[POSTFIX] Modified result: '{__result}'");
             }
         }
 
@@ -46,11 +48,12 @@ namespace HarmonyWeaver.Tests.Patches
             string second, 
             ref string __result)
         {
-            Console.WriteLine($"[PREFIX] Concatenating: '{first ?? "<null>"}' + '{second ?? "<null>"}'");
+            LoggerProvider.Logger.LogInfo($"[PREFIX] Concatenating: '{first ?? "<null>"}' + '{second ?? "<null>"}'");
             
             // Example: if both strings are null or empty, return a special message
             if (string.IsNullOrEmpty(first) && string.IsNullOrEmpty(second))
             {
+                LoggerProvider.Logger.LogInfo("[PREFIX] Both strings empty, returning special message");
                 __result = "[EMPTY CONCATENATION]";
                 return false; // Skip original method
             }
@@ -65,7 +68,7 @@ namespace HarmonyWeaver.Tests.Patches
         [HarmonyPostfix]
         public static void ConcatenateStringsPostfix(string first, string second, string __result)
         {
-            Console.WriteLine($"[POSTFIX] Concatenation result: '{__result}'");
+            LoggerProvider.Logger.LogInfo($"[POSTFIX] Concatenation result: '{__result}'");
         }
     }
 }
