@@ -17,7 +17,7 @@ The library is divided into four main components:
 
 ### 1. HarmonyWeaver.Core
 The main library containing:
-- **Interfaces**: `IAssemblyLoader`, `IPatchScanner`, `IILWeaver`, `IAssemblySaver`, `IHarmonyWeaver`
+- **Interfaces**: `IAssemblyLoader`, `IPatchScanner`, `IILWeaver`, `IAssemblySaver`, `IHarmonyWeaver`, `IRuntimeAssemblyLoader`
 - **Models**: `PatchInfo`, `HarmonyPatchAttribute`, `PatchMethodInfo`, `PatchParameterInfo`
 - **Implementation**: Default implementations of all interfaces
 - **Main API**: `HarmonyWeaver` class that orchestrates the entire process
@@ -122,6 +122,7 @@ using HarmonyWeaver.Core.Implementation;
 
 // Create the weaver
 var assemblyLoader = new AssemblyLoader();
+var runtimeLoader = new RuntimeAssemblyLoader(); // For runtime isolation when needed
 var patchScanner = new PatchScanner();
 var ilWeaver = new ILWeaver();
 var assemblySaver = new AssemblySaver();
@@ -137,6 +138,41 @@ var patchedFiles = weaver.ProcessPatches(
 
 Console.WriteLine($"Created patched assemblies: {string.Join(", ", patchedFiles)}");
 ```
+
+### Optional: Runtime loading without AppDomain (for testing/inspection)
+
+When you need to load both original and patched assemblies in the same process (e.g., to validate behavior), do not rely on `AppDomain` (deprecated in modern .NET). Use `IRuntimeAssemblyLoader` which is based on `AssemblyLoadContext`:
+
+```csharp
+using HarmonyWeaver.Core.Implementation;
+using System.Runtime.Loader;
+
+var runtimeLoader = new RuntimeAssemblyLoader();
+
+// One context for original assemblies
+var originalCtx = runtimeLoader.CreateContext(
+    name: "original",
+    probingPaths: new[] { "/path/to/originals", "/path/to/shared/deps" },
+    isCollectible: true,
+    preferDefaultLoad: true);
+
+// Another context for patched assemblies
+var patchedCtx = runtimeLoader.CreateContext(
+    name: "patched",
+    probingPaths: new[] { "/path/to/patched", "/path/to/shared/deps" },
+    isCollectible: true,
+    preferDefaultLoad: true);
+
+var original = runtimeLoader.LoadFromPath(originalCtx, "/path/to/originals/TargetLibrary.dll");
+var patched = runtimeLoader.LoadFromPath(patchedCtx, "/path/to/patched/TargetLibrary.dll");
+
+// ... run tests via reflection ...
+
+runtimeLoader.Unload(originalCtx);
+runtimeLoader.Unload(patchedCtx);
+```
+
+This ensures the runtime doesn't resolve to a previously loaded assembly by identity, avoiding the need to rename assemblies. Prefer separate `AssemblyLoadContext`s to isolate bindings and keep the default load context clean.
 
 ## API Design
 
