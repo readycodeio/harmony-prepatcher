@@ -32,7 +32,7 @@ namespace HarmonyWeaver.Core.Loading
                     // Try to load the assembly
                     return Assembly.LoadFrom(assemblyPath);
                 }
-                catch (IOException ex) when (attempt < maxAttempts - 1)
+                catch (Exception ex) when (IsTransientFileError(ex) && attempt < maxAttempts - 1)
                 {
                     // File is likely locked by antivirus or other Windows services
                     lastException = ex;
@@ -41,18 +41,16 @@ namespace HarmonyWeaver.Core.Loading
                     var delay = baseDelayMs * (1 << attempt);
                     Thread.Sleep(delay);
                 }
-                catch (UnauthorizedAccessException ex) when (attempt < maxAttempts - 1)
-                {
-                    // Access denied, possibly due to antivirus scanning
-                    lastException = ex;
-                    
-                    var delay = baseDelayMs * (1 << attempt);
-                    Thread.Sleep(delay);
-                }
                 catch (BadImageFormatException ex)
                 {
                     // This is a real error, not a timing issue - don't retry
                     throw new InvalidOperationException($"Invalid assembly format: {assemblyPath}", ex);
+                }
+                catch (Exception ex)
+                {
+                    // Non-transient error or final attempt
+                    lastException = ex;
+                    break;
                 }
             }
 
@@ -62,6 +60,18 @@ namespace HarmonyWeaver.Core.Loading
                 $"This may be due to Windows antivirus software or file system delays. " +
                 $"Last error: {lastException?.Message}", 
                 lastException);
+        }
+
+        /// <summary>
+        /// Determine if an exception represents a transient file locking issue that should be retried
+        /// </summary>
+        private static bool IsTransientFileError(Exception ex)
+        {
+            return ex is IOException ||
+                   ex is UnauthorizedAccessException ||
+                   ex is InvalidOperationException ||
+                   (ex is SystemException && ex.Message.Contains("locked")) ||
+                   (ex is SystemException && ex.Message.Contains("access"));
         }
 
         /// <summary>

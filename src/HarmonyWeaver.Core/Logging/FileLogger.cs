@@ -59,7 +59,7 @@ namespace HarmonyWeaver.Core.Logging
                     }
                     return; // Success, exit retry loop
                 }
-                catch (IOException) when (attempt < maxAttempts - 1)
+                catch (Exception ex) when (IsTransientFileError(ex) && attempt < maxAttempts - 1)
                 {
                     // File might be locked, wait briefly and retry
                     // Use exponential backoff: 10ms, 20ms, 40ms
@@ -71,6 +71,18 @@ namespace HarmonyWeaver.Core.Logging
                     return;
                 }
             }
+        }
+
+        /// <summary>
+        /// Determine if an exception represents a transient file locking issue
+        /// </summary>
+        private static bool IsTransientFileError(Exception ex)
+        {
+            return ex is IOException ||
+                   ex is UnauthorizedAccessException ||
+                   ex is InvalidOperationException ||
+                   (ex is SystemException && ex.Message.Contains("locked")) ||
+                   (ex is SystemException && ex.Message.Contains("access"));
         }
 
         /// <summary>
