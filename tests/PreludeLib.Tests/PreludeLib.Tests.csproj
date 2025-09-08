@@ -11,19 +11,20 @@
 
     <ItemGroup>
         <PackageReference Include="coverlet.collector" Version="6.0.0" />
+        <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.8" />
         <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
         <PackageReference Include="xunit" Version="2.5.3" />
         <PackageReference Include="xunit.runner.visualstudio" Version="2.5.3" />
     </ItemGroup>
 
     <ItemGroup>
-        <Using Include="Xunit" />
+        <ProjectReference Include="..\..\src\Harmony\LocalMonoMod\src\MonoMod.Core\MonoMod.Core.csproj" PrivateAssets="all" />
+        <ProjectReference Include="..\..\src\Harmony\LocalMonoMod\src\MonoMod.RuntimeDetour\MonoMod.RuntimeDetour.csproj" />
+        <ProjectReference Include="..\..\src\Harmony\Lib.Harmony\Lib.Harmony.csproj" />
     </ItemGroup>
-
+    
     <ItemGroup>
-        <ProjectReference Include="..\..\src\PreludeLib\PreludeLib.csproj" />
-        <ProjectReference Include="..\PreludeLib.Tests.Examples\PreludeLib.Tests.Examples.csproj" />
-        <ProjectReference Include="..\PreludeLib.Tests.Patches\PreludeLib.Tests.Patches.csproj" />
+        <Using Include="Xunit" />
     </ItemGroup>
 
 </Project>

@@ -1,0 +1,11 @@
+﻿using Microsoft.Extensions.Logging;
+using PreludeLib.Runtime;
+using PreludeLib.Runtime.DummyBackend;
+
+namespace PreludeLib.Payload.Prefix;
+
+public class DummyPrefixPayload(ILogger logger) : PrefixPayloadBase(false, logger)
+{
+    protected override IPreludeBackend CreateBackend(string id)
+        => new PreludeDummyBackend(id);
+}

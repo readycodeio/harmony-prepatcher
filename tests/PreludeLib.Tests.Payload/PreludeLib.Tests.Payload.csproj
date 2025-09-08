@@ -1,0 +1,25 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net8.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+
+        <IsPackable>false</IsPackable>
+        <IsTestProject>true</IsTestProject>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\..\src\Harmony\Lib.Harmony\Lib.Harmony.csproj" />
+        <ProjectReference Include="..\..\src\PreludeLib\PreludeLib.csproj" />
+        <ProjectReference Include="..\PreludeLib.Tests.Examples\PreludeLib.Tests.Examples.csproj" />
+        <ProjectReference Include="..\PreludeLib.Tests.Patches\PreludeLib.Tests.Patches.csproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.8" />
+        <PackageReference Include="xunit.assert" Version="2.5.3" />
+        <PackageReference Include="xunit.extensibility.core" Version="2.5.3" />
+    </ItemGroup>
+
+</Project>

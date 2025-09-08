@@ -4,13 +4,15 @@
         <TargetFramework>net8.0</TargetFramework>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
-        <RootNamespace>HarmonyWeaver.Tests.Patches</RootNamespace>
     </PropertyGroup>
 
     <ItemGroup>
+        <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.8" />
+    </ItemGroup>
+    
+    <ItemGroup>
         <ProjectReference Include="..\..\src\Harmony\Lib.Harmony\Lib.Harmony.csproj" />
         <ProjectReference Include="..\PreludeLib.Tests.Examples\PreludeLib.Tests.Examples.csproj" />
-        <ProjectReference Include="..\PreludeLib.Tests.Utils\PreludeLib.Tests.Utils.csproj" />
     </ItemGroup>
 
 </Project>
