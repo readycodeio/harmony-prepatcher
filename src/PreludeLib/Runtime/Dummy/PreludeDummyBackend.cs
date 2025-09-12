@@ -1,13 +1,16 @@
-﻿using System;
-using System.Reflection;
+﻿using System.Reflection;
 using HarmonyLib;
+using PreludeLib.Runtime.Utils;
 
 namespace PreludeLib.Runtime.DummyBackend;
 
 public class PreludeDummyBackend(string id) : IPreludeBackend
 {
     public readonly string Id = id;
-    
+
+    public IPreludePatchProcessor CreateProcessor(MethodBase original)
+        => new PreludeDummyPatchProcessor(this, original);
+
     public IPreludeClassProcessor CreateClassProcessor(Type type)
         => new PreludeDummyClassProcessor(this, type);
 
@@ -26,15 +29,13 @@ public class PreludeDummyBackend(string id) : IPreludeBackend
         // no-op
     }
 
-    public void Patch(
-        MethodInfo original, 
-        PreludeMethod? prefix = null,
-        PreludeMethod? postfix = null,
-        PreludeMethod? finalizer = null,
-        PreludeMethod? transpiler = null)
-    {
-        // no-op
-    }
+    public MethodInfo Patch(
+        MethodBase original,
+        HarmonyMethod? prefix = null,
+        HarmonyMethod? postfix = null,
+        HarmonyMethod? finalizer = null,
+        HarmonyMethod? transpiler = null)
+        => MethodUtils.WrapMethod(original);
 
     public void UnpatchAll()
     {

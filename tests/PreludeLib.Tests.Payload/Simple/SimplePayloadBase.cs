@@ -1,6 +1,6 @@
 using System.Reflection;
+using HarmonyLib;
 using Microsoft.Extensions.Logging;
-using PreludeLib.Runtime;
 using PreludeLib.Tests.Examples;
 using PreludeLib.Tests.Patches.Simple;
 using Xunit;
@@ -112,7 +112,7 @@ public abstract class SimplePayloadBase(bool shouldPass, ILogger logger) : Backe
 
         Assert.NotNull(originalDivide);
 
-        var finalizer = new PreludeMethod(typeof(CalculatorPatches).GetMethod(nameof(CalculatorPatches.DivideFinalizer), BindingFlags.Public | BindingFlags.Static)!);
+        var finalizer = new HarmonyMethod(typeof(CalculatorPatches).GetMethod(nameof(CalculatorPatches.DivideFinalizer), BindingFlags.Public | BindingFlags.Static)!);
         backend.Patch(originalDivide, finalizer: finalizer);
 
         try

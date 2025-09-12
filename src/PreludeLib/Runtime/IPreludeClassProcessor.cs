@@ -1,6 +1,10 @@
-﻿namespace PreludeLib.Runtime;
+﻿using System.Reflection;
+
+namespace PreludeLib.Runtime;
 
 public interface IPreludeClassProcessor
 {
-    void Patch();
+    string? Category { get; }
+    
+    List<MethodInfo> Patch();
 }

@@ -1,23 +1,24 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
+﻿using System.Diagnostics;
 using System.Reflection;
 using System.Diagnostics.CodeAnalysis;
 using HarmonyLib;
 using Microsoft.Extensions.Logging;
-using Xunit;
 
 namespace PreludeLib.Runtime.HarmonyBackend;
 
 public class PreludeHarmonyBackend(string id, ILogger logger) : IPreludeBackend
 {
+    public string Id { get; } = id;
     public Harmony Harmony { get; } = new(id);
+
+    public IPreludePatchProcessor CreateProcessor(MethodBase original)
+        => new PreludeHarmonyPatchProcessor(this, original);
 
     public IPreludeClassProcessor CreateClassProcessor(Type type)
         => new PreludeHarmonyClassProcessor(this, type);
 
     public void PatchAll(Assembly patchAssembly)
-        => Harmony.PatchAllUncategorized(patchAssembly);
+        => Harmony.PatchAll(patchAssembly);
 
     public void PatchCategory(Assembly patchAssembly, string category)
         => Harmony.PatchCategory(patchAssembly, category);
@@ -25,39 +26,28 @@ public class PreludeHarmonyBackend(string id, ILogger logger) : IPreludeBackend
     public void PatchAllUncategorized(Assembly patchAssembly)
         => Harmony.PatchAllUncategorized(patchAssembly);
 
-    public void Patch(
-        MethodInfo original,
-        PreludeMethod? prefix = null,
-        PreludeMethod? postfix = null,
-        PreludeMethod? finalizer = null,
-        PreludeMethod? transpiler = null
-    )
+    public MethodInfo Patch(
+        MethodBase original,
+        HarmonyMethod? prefix = null,
+        HarmonyMethod? postfix = null,
+        HarmonyMethod? finalizer = null,
+        HarmonyMethod? transpiler = null)
         => Harmony.Patch(
             original, 
-            prefix: prefix?.ToHarmonyMethod(),
-            postfix: postfix?.ToHarmonyMethod(),
-            finalizer: finalizer?.ToHarmonyMethod(),
-            transpiler: transpiler?.ToHarmonyMethod()
+            prefix: prefix,
+            postfix: postfix,
+            finalizer: finalizer,
+            transpiler: transpiler
         );
-
-    private void HarmonyUnpatch(MethodBase original, MethodInfo patch)
-    {
-        logger.LogInformation("Unpatching {0} from {1}", patch, original);
-        Harmony.Unpatch(original, patch);
-    }
 
     public void UnpatchAll()
     {
         foreach (var original in Harmony.GetAllPatchedMethods()) // all originals
         {
-            var patches = Harmony.GetPatchInfo(original);
-            if (patches == null)
-                continue;
-
             foreach (var patch in GetOwnedPatch(original))
             {
-                Assert.Equal(id, patch.owner);
-                HarmonyUnpatch(original, patch.PatchMethod);
+                Debug.Assert(Id == patch.owner);
+                DoUnpatch(original, patch.PatchMethod);
             }
         }
     }
@@ -66,14 +56,10 @@ public class PreludeHarmonyBackend(string id, ILogger logger) : IPreludeBackend
     {
         foreach (var original in Harmony.GetAllPatchedMethods()) // all originals
         {
-            var patches = Harmony.GetPatchInfo(original);
-            if (patches == null)
-                continue;
-
             foreach (var patch in GetOwnedMatchingPatch(original, patchAssembly))
             {
-                Assert.Equal(id, patch.owner);
-                HarmonyUnpatch(original, patch.PatchMethod);
+                Debug.Assert(Id == patch.owner);
+                DoUnpatch(original, patch.PatchMethod);
             }
         }
     }
@@ -82,14 +68,10 @@ public class PreludeHarmonyBackend(string id, ILogger logger) : IPreludeBackend
     {
         foreach (var original in Harmony.GetAllPatchedMethods()) // all originals
         {
-            var patches = Harmony.GetPatchInfo(original);
-            if (patches == null)
-                continue;
-
             foreach (var patch in GetOwnedMatchingPatch(original, patchAssembly, category))
             {
-                Assert.Equal(id, patch.owner);
-                HarmonyUnpatch(original, patch.PatchMethod);
+                Debug.Assert(Id == patch.owner);
+                DoUnpatch(original, patch.PatchMethod);
             }
         }
     }
@@ -98,14 +80,10 @@ public class PreludeHarmonyBackend(string id, ILogger logger) : IPreludeBackend
     {
         foreach (var original in Harmony.GetAllPatchedMethods()) // all originals
         {
-            var patches = Harmony.GetPatchInfo(original);
-            if (patches == null)
-                continue;
-
             foreach (var patch in GetOwnedMatchingPatch(original, category: null))
             {
-                Assert.Equal(id, patch.owner);
-                HarmonyUnpatch(original, patch.PatchMethod);
+                Debug.Assert(Id == patch.owner);
+                DoUnpatch(original, patch.PatchMethod);
             }
         }
     }
@@ -114,14 +92,10 @@ public class PreludeHarmonyBackend(string id, ILogger logger) : IPreludeBackend
     {
         foreach (var original in Harmony.GetAllPatchedMethods()) // all originals
         {
-            var patches = Harmony.GetPatchInfo(original);
-            if (patches == null)
-                continue;
-
             foreach (var patch in GetOwnedMatchingPatch(original, category))
             {
-                Assert.Equal(id, patch.owner);
-                HarmonyUnpatch(original, patch.PatchMethod);
+                Debug.Assert(Id == patch.owner);
+                DoUnpatch(original, patch.PatchMethod);
             }
         }
     }
@@ -130,26 +104,22 @@ public class PreludeHarmonyBackend(string id, ILogger logger) : IPreludeBackend
     {
         foreach (var original in Harmony.GetAllPatchedMethods()) // all originals
         {
-            var patches = Harmony.GetPatchInfo(original);
-            if (patches == null)
-                continue;
-
             foreach (var patch in GetOwnedMatchingPatch(original, category: null))
             {
-                Assert.Equal(id, patch.owner);
-                HarmonyUnpatch(original, patch.PatchMethod);
+                Debug.Assert(Id == patch.owner);
+                DoUnpatch(original, patch.PatchMethod);
             }
         }
     }
 
     public void Unpatch(MethodBase original, HarmonyPatchType patchType)
-        => Harmony.Unpatch(original, patchType, id);
+        => Harmony.Unpatch(original, patchType, Id);
 
     public void Unpatch(MethodBase original, MethodInfo patch)
     {
         EnsurePatchOwned(original, patch, out var patchInfo);
-        Assert.Equal(id, patchInfo.owner);
-        HarmonyUnpatch(original, patch);
+        Debug.Assert(Id == patchInfo.owner);
+        DoUnpatch(original, patch);
     }
 
     // ---
@@ -168,29 +138,29 @@ public class PreludeHarmonyBackend(string id, ILogger logger) : IPreludeBackend
     {
         if (!GetAnyPatchInfo(original, patch, out patchInfo))
             return false;
-        return patchInfo.owner == id;
+        return patchInfo.owner == Id;
     }
     
     private void EnsurePatchOwned(MethodBase original, MethodInfo patch, out Patch patchInfo)
     {
-        if (!GetAnyPatchInfo(original, patch, out patchInfo))
-        {
-            throw new ArgumentException("The specified patch was not applied.", nameof(patch));
-        }
+        var owned = IsOwnedPatch(original, patch, out var p);
         
-        if (patchInfo.owner != id)
-        {
-            throw new ArgumentException($"The specified patch method is not applied to the original method, actual owner: {patchInfo.owner}.", nameof(patch));
-        }
+        if (p == null)
+            throw new ArgumentException("The specified patch was not applied.", nameof(patch));
+        
+        if (!owned)
+            throw new ArgumentException($"The specified patch method is not applied to the original method, actual owner: {p.owner}.", nameof(patch));
+
+        patchInfo = p;
     }
 
     private IEnumerable<Patch> GetOwnedPatch(MethodBase? original)
     {
         var patches = Harmony.GetPatchInfo(original);
-        return patches.Prefixes.Where(x => x.owner == id)
-            .Concat(patches.Postfixes.Where(x => x.owner == id))
-            .Concat(patches.Finalizers.Where(x => x.owner == id))
-            .Concat(patches.Transpilers.Where(x => x.owner == id));
+        return patches.Prefixes.Where(x => x.owner == Id)
+            .Concat(patches.Postfixes.Where(x => x.owner == Id))
+            .Concat(patches.Finalizers.Where(x => x.owner == Id))
+            .Concat(patches.Transpilers.Where(x => x.owner == Id));
     }
 
     private IEnumerable<Patch> GetOwnedMatchingPatch(MethodBase? original, string? category)
@@ -221,4 +191,10 @@ public class PreludeHarmonyBackend(string id, ILogger logger) : IPreludeBackend
 
     private static bool IsPatchMatching(MethodInfo patch, Assembly patchAssembly, string? category)
         => IsPatchMatching(patch, patchAssembly) && IsPatchMatching(patch, category);
+    
+    private void DoUnpatch(MethodBase original, MethodInfo patch)
+    {
+        logger.LogInformation("Unpatching {0} from {1}", patch, original);
+        Harmony.Unpatch(original, patch);
+    }
 }

@@ -1,4 +1,5 @@
 ﻿using System.Reflection;
+using HarmonyLib;
 using Microsoft.Extensions.Logging;
 using PreludeLib.Runtime;
 using PreludeLib.Tests.Examples;
@@ -56,7 +57,7 @@ public abstract class UnpatchPayloadBase(bool shouldPass, ILogger logger) : Back
 
             UnpatchProbes.Steps.Clear();
 
-            backend.Patch(original, prefix: new PreludeMethod(bPatchMethod)); // <-- corrected overload
+            backend.Patch(original, prefix: new HarmonyMethod(bPatchMethod)); // <-- corrected overload
 
             // Run again: expect C with same relative order
             t.Compute(1);

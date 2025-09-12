@@ -1,21 +1,16 @@
-﻿using System;
+﻿using System.Reflection;
 using HarmonyLib;
 
 namespace PreludeLib.Runtime.HarmonyBackend;
 
-public class PreludeHarmonyClassProcessor : IPreludeClassProcessor
+public class PreludeHarmonyClassProcessor(PreludeHarmonyBackend instance, Type type) : IPreludeClassProcessor
 {
-    private readonly PreludeHarmonyBackend _instance;
-    private readonly PatchClassProcessor _harmonyProcessor;
+    private readonly PreludeHarmonyBackend _instance = instance;
+    private readonly PatchClassProcessor _harmonyProcessor = new(instance.Harmony, type);
     
-    public PreludeHarmonyClassProcessor(PreludeHarmonyBackend instance, Type type)
-    {
-        _instance = instance;
-        _harmonyProcessor = new PatchClassProcessor(instance.Harmony, type);
-    }
+    public string? Category
+        => _harmonyProcessor.Category;
 
-    public void Patch()
-    {
-        _harmonyProcessor.Patch();
-    }
+    public List<MethodInfo> Patch()
+        => _harmonyProcessor.Patch();
 }

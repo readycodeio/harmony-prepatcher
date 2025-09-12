@@ -6,17 +6,18 @@ namespace PreludeLib.Runtime;
 
 public interface IPreludeBackend
 {
+    IPreludePatchProcessor CreateProcessor(MethodBase original);
     IPreludeClassProcessor CreateClassProcessor(Type type);
 
     void PatchAll(Assembly patchAssembly);
     void PatchCategory(Assembly patchAssembly, string category);
     void PatchAllUncategorized(Assembly patchAssembly);
-    void Patch(
-        MethodInfo original,
-        PreludeMethod? prefix = null,
-        PreludeMethod? postfix = null,
-        PreludeMethod? finalizer = null,
-        PreludeMethod? transpiler = null
+    MethodInfo Patch(
+        MethodBase original,
+        HarmonyMethod? prefix = null,
+        HarmonyMethod? postfix = null,
+        HarmonyMethod? finalizer = null,
+        HarmonyMethod? transpiler = null
     );
     
     public void UnpatchAll();

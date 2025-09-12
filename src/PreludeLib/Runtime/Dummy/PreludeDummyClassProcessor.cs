@@ -1,20 +1,11 @@
-﻿using System;
+﻿using System.Reflection;
 
 namespace PreludeLib.Runtime.DummyBackend;
 
-public class PreludeDummyClassProcessor : IPreludeClassProcessor
+public class PreludeDummyClassProcessor(PreludeDummyBackend instance, Type type) : IPreludeClassProcessor
 {
-    private readonly PreludeDummyBackend _instance;
-    private readonly Type _type;
-    
-    public PreludeDummyClassProcessor(PreludeDummyBackend instance, Type type)
-    {
-        _instance = instance;
-        _type = type;
-    }
+    public string? Category { get; }
 
-    public void Patch()
-    {
-        // no-op!
-    }
+    public List<MethodInfo> Patch()
+        => [];
 }
