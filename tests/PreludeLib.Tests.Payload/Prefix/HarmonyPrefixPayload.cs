@@ -1,6 +1,6 @@
 ﻿using Microsoft.Extensions.Logging;
 using PreludeLib.Runtime;
-using PreludeLib.Runtime.HarmonyBackend;
+using PreludeLib.Runtime.Backend.HarmonyDetour;
 
 namespace PreludeLib.Payload.Prefix;
 

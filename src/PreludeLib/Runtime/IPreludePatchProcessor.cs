@@ -5,10 +5,10 @@ namespace PreludeLib.Runtime;
 
 public interface IPreludePatchProcessor
 {
-    IPreludePatchProcessor AddPrefix(HarmonyMethod? prefix);
-    IPreludePatchProcessor AddPostfix(HarmonyMethod? postfix);
-    IPreludePatchProcessor AddTranspiler(HarmonyMethod? transpiler);
-    IPreludePatchProcessor AddFinalizer(HarmonyMethod? finalizer);
+    void AddPrefix(HarmonyMethod? prefix);
+    void AddPostfix(HarmonyMethod? postfix);
+    void AddTranspiler(HarmonyMethod? transpiler);
+    void AddFinalizer(HarmonyMethod? finalizer);
     
-    MethodInfo Patch();
+    void Patch();
 }

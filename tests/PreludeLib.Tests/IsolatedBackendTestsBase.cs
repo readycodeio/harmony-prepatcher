@@ -23,9 +23,26 @@ public abstract class IsolatedBackendTestsBase(ITestOutputHelper output)
     
     private void RunTestIsolatedInner(ILogger logger, out WeakReference weakRef, string methodName, bool isBaseline)
     {
-        var payloadPath = ResolvePayloadPath();
+        var basePayloadPath = ResolvePayloadPath();
         
-        var alc = new IsolatedAssemblyLoadContext(payloadPath);
+        var tempPath = Path.GetTempPath();
+        var tempFolderName = Path.GetRandomFileName();
+        var tempTestPath = Path.Combine(tempPath, tempFolderName);
+        
+        Directory.CreateDirectory(tempTestPath);
+        
+        var payloadPath = Path.Combine(tempTestPath, Path.GetFileName(basePayloadPath));
+        File.Copy(basePayloadPath, payloadPath);
+ 
+        var basePatchesPath = basePayloadPath.Replace("PreludeLib.Tests.Payload.dll", "PreludeLib.Tests.Patches.dll");
+        var patchesPath = Path.Combine(tempTestPath, Path.GetFileName(basePatchesPath));
+        File.Copy(basePatchesPath, patchesPath, true);
+
+        var baseExamplesPath = basePayloadPath.Replace("PreludeLib.Tests.Payload.dll", "PreludeLib.Tests.Examples.dll");
+        var examplesPath = Path.Combine(tempTestPath, Path.GetFileName(baseExamplesPath));
+        File.Copy(baseExamplesPath, examplesPath, true);
+        
+        var alc = new IsolatedAssemblyLoadContext(payloadPath, basePayloadPath);
         weakRef = new WeakReference(alc);
 
         try
@@ -33,33 +50,57 @@ public abstract class IsolatedBackendTestsBase(ITestOutputHelper output)
             var asm = alc.LoadFromAssemblyPath(payloadPath);
             var type = asm.GetType(GetType().FullName!.Replace("Tests", "Payload"), throwOnError: true)!;
             var typeInst = Activator.CreateInstance(type, logger);
+
             var t = type;
-            MethodInfo? method = null;
-            while (method == null && t != null)
+            MethodInfo? testMethod = null;
+            while (testMethod == null && t != null)
             {
-                method = t.GetMethod(methodName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                testMethod = t.GetMethod(methodName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
                 t = t.BaseType;
             }
-            Assert.NotNull(method);
+            Assert.NotNull(testMethod);
+
+            t = type;
+            MethodInfo? preprocessMethod = null;
+            while (preprocessMethod == null && t != null)
+            {
+                preprocessMethod = t.GetMethod("Preprocess", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                t = t.BaseType;
+            }
             
             var shouldPassProp = type.GetProperty("ShouldPass", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
             var shouldPass = isBaseline || (shouldPassProp != null && (bool)shouldPassProp.GetValue(typeInst!)!);
 
+            AlcAssert.AssertTypeInDefaultALC(typeof(Harmony));
+
             AlcAssert.AssertTypeInALC(type, alc);
             
-            var patchesAsm = alc.LoadFromAssemblyPath(payloadPath.Replace("PreludeLib.Tests.Payload.dll", "PreludeLib.Tests.Patches.dll"));
+            var patchesAsm = alc.LoadFromAssemblyPath(patchesPath);
             AlcAssert.AssertAssemblyInALC(patchesAsm, alc);
 
-            var examplesAsm = alc.LoadFromAssemblyPath(payloadPath.Replace("PreludeLib.Tests.Payload.dll", "PreludeLib.Tests.Examples.dll"));
+            if (preprocessMethod != null)
+            {
+                RunTestInner(() =>
+                {
+                    try
+                    {
+                        preprocessMethod.Invoke(typeInst, [examplesPath]);
+                    }
+                    catch (TargetInvocationException ex)
+                    {
+                        ExceptionDispatchInfo.Capture(ex.InnerException!).Throw();
+                    }
+                }, shouldPass);
+            }
+            
+            var examplesAsm = alc.LoadFromAssemblyPath(examplesPath);
             AlcAssert.AssertAssemblyInALC(examplesAsm, alc);
 
-            AlcAssert.AssertTypeInDefaultALC(typeof(Harmony));
-            
             RunTestInner(() =>
             {
                 try
                 {
-                    method.Invoke(typeInst, null);
+                    testMethod.Invoke(typeInst, null);
                 }
                 catch (TargetInvocationException ex)
                 {

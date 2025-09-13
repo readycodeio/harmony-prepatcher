@@ -13,13 +13,22 @@ public sealed class IsolatedAssemblyLoadContext : AssemblyLoadContext
         "MonoMod.Utils",
         "Mono.Cecil" // if present
     };
-    
-    private readonly AssemblyDependencyResolver _resolver;
 
-    public IsolatedAssemblyLoadContext(string mainAssemblyPath)
+    private static readonly string[] Main =
+    {
+        "PreludeLib.Tests.Payload",
+        "PreludeLib.Tests.Patches",
+        "PreludeLib.Tests.Examples",
+    };
+
+    private readonly AssemblyDependencyResolver _mainResolver;
+    private readonly AssemblyDependencyResolver _commonResolver;
+
+    public IsolatedAssemblyLoadContext(string mainAssemblyPath, string commonAssemblyPath)
         : base(isCollectible: true, name: Guid.NewGuid().ToString())
     {
-        _resolver = new AssemblyDependencyResolver(mainAssemblyPath);
+        _mainResolver = new AssemblyDependencyResolver(mainAssemblyPath);
+        _commonResolver = new AssemblyDependencyResolver(commonAssemblyPath);
         
         Resolving += (_, name) =>
         {
@@ -35,15 +44,37 @@ public sealed class IsolatedAssemblyLoadContext : AssemblyLoadContext
         if (Shared.Contains(assemblyName.Name!, StringComparer.Ordinal))
             return null; // force Resolving -> return Default copy
 
-        var path = _resolver.ResolveAssemblyToPath(assemblyName);
-        if (path != null)
-            return LoadFromAssemblyPath(path);
+        if (Main.Contains(assemblyName.Name!, StringComparer.Ordinal))
+        {
+            var path = _mainResolver.ResolveAssemblyToPath(assemblyName);
+            if (path != null)
+                return LoadFromAssemblyPath(path);
+        }
+        else
+        {
+            var path = _commonResolver.ResolveAssemblyToPath(assemblyName);
+            if (path != null)
+                return LoadFromAssemblyPath(path);
+        }
+        
         return null;
     }
 
     protected override IntPtr LoadUnmanagedDll(string unmanagedDllName)
     {
-        var path = _resolver.ResolveUnmanagedDllToPath(unmanagedDllName);
-        return path != null ? LoadUnmanagedDllFromPath(path) : IntPtr.Zero;
+        if (Main.Contains(unmanagedDllName, StringComparer.Ordinal))
+        {
+            var path = _mainResolver.ResolveUnmanagedDllToPath(unmanagedDllName);
+            if (path != null)
+                return LoadUnmanagedDllFromPath(path);
+        }
+        else
+        {
+            var path = _commonResolver.ResolveUnmanagedDllToPath(unmanagedDllName);
+            if (path != null)
+                return LoadUnmanagedDllFromPath(path);
+        }
+
+        return IntPtr.Zero;
     }
 }

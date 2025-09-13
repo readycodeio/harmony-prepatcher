@@ -1,7 +1,7 @@
 ﻿using System.Collections.Concurrent;
 using System.Reflection;
 using System.Reflection.Emit;
-using PreludeLib.Runtime.WeaverCallback;
+using PreludeLib.Runtime.Backend.WeaverCallback;
 
 namespace PreludeLib.Runtime.Utils;
 
