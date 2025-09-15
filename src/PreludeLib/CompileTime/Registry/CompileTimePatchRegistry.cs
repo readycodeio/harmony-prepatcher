@@ -1,5 +1,6 @@
 ﻿using HarmonyLib;
 using Mono.Cecil;
+using PreludeLib.Common;
 using PreludeLib.CompileTime.Public;
 using PreludeLib.CompileTime.Utils;
 
@@ -24,14 +25,13 @@ public class CompileTimePatchRegistry : ICompileTimePatchRegistry
     
     private readonly List<MethodDefinition> _allOriginals = new();
     private readonly Dictionary<MethodDefinition, OriginalMethodEntry> _originalEntries = new();
-    private readonly Dictionary<MethodDefinition, PatchEntry> _patchEntries = [];
 
     public IEnumerable<MethodDefinition> GetOriginalMethods()
         => _allOriginals;
 
-    public IEnumerable<CompileTimePreludeMethod> GetPatchMethods(MethodDefinition original, HarmonyPatchType patchType)
+    public IEnumerable<CompileTimePreludeMethod> GetPatchMethods(MethodDefinition originalDef, HarmonyPatchType patchType)
     {
-        EnsureOriginalMethodEntry(original, out var entry);
+        EnsureOriginalMethodEntry(originalDef, out var entry);
         return patchType switch
         {
             HarmonyPatchType.All => entry.Prefixes.Select(p => p.PatchInfo)
@@ -45,14 +45,38 @@ public class CompileTimePatchRegistry : ICompileTimePatchRegistry
         };
     }
 
-    public IEnumerable<CompileTimePreludeMethod> GetPrefixMethods(MethodDefinition original)
-        => GetPatchMethods(original, HarmonyPatchType.Prefix);
+    public IEnumerable<CompileTimePreludeMethod> GetPrefixMethods(MethodDefinition originalDef)
+        => GetPatchMethods(originalDef, HarmonyPatchType.Prefix);
 
-    public IEnumerable<CompileTimePreludeMethod> GetPostfixMethods(MethodDefinition original)
-        => GetPatchMethods(original, HarmonyPatchType.Postfix);
+    public IEnumerable<CompileTimePreludeMethod> GetPostfixMethods(MethodDefinition originalDef)
+        => GetPatchMethods(originalDef, HarmonyPatchType.Postfix);
 
-    public IEnumerable<CompileTimePreludeMethod> GetFinalizerMethods(MethodDefinition original)
-        => GetPatchMethods(original, HarmonyPatchType.Finalizer);
+    public IEnumerable<CompileTimePreludeMethod> GetFinalizerMethods(MethodDefinition originalDef)
+        => GetPatchMethods(originalDef, HarmonyPatchType.Finalizer);
+
+    public IEnumerable<CompileTimePreludeMethod> GetCategoryPatchMethods(MethodDefinition originalDef, HarmonyPatchType patchType, Category category)
+        => GetPatchMethods(originalDef, patchType).Where(x => x.Category == category.Name);
+
+    public IEnumerable<CompileTimePreludeMethod> GetCategoryPrefixMethods(MethodDefinition originalDef, Category category)
+        => GetPrefixMethods(originalDef).Where(x => x.Category == category.Name);
+
+    public IEnumerable<CompileTimePreludeMethod> GetCategoryPostfixMethods(MethodDefinition originalDef, Category category)
+        => GetPostfixMethods(originalDef).Where(x => x.Category == category.Name);
+
+    public IEnumerable<CompileTimePreludeMethod> GetCategoryFinalizerMethods(MethodDefinition originalDef, Category category)
+        => GetFinalizerMethods(originalDef).Where(x => x.Category == category.Name);
+    
+    public IEnumerable<CompileTimePreludeMethod> GetUncategorizedPatchMethods(MethodDefinition originalDef, HarmonyPatchType patchType)
+        => GetCategoryPatchMethods(originalDef, patchType, Category.Uncategorized);
+
+    public IEnumerable<CompileTimePreludeMethod> GetUncategorizedPrefixMethods(MethodDefinition originalDef)
+        => GetCategoryPrefixMethods(originalDef, Category.Uncategorized);
+
+    public IEnumerable<CompileTimePreludeMethod> GetUncategorizedPostfixMethods(MethodDefinition originalDef)
+        => GetCategoryPostfixMethods(originalDef, Category.Uncategorized);
+
+    public IEnumerable<CompileTimePreludeMethod> GetUncategorizedFinalizerMethods(MethodDefinition originalDef)
+        => GetCategoryFinalizerMethods(originalDef, Category.Uncategorized);
 
     public void AddOriginalMethod(MethodReference originalRef)
     {
@@ -78,19 +102,16 @@ public class CompileTimePatchRegistry : ICompileTimePatchRegistry
         entry = e;
     }
 
-    public void AddPatchMethod(MethodReference original, HarmonyPatchType patchType, CompileTimePreludeMethod patchMethod)
+    public void AddPatchMethod(MethodReference originalRef, HarmonyPatchType patchType, CompileTimePreludeMethod patchMethod)
     {
-        var resolved = original.Resolve();
+        var resolved = originalRef.Resolve();
         if (resolved is null)
-            throw new ArgumentException($"Original method reference could not be resolved: {original.FullDescription()}");
+            throw new ArgumentException($"Original method reference could not be resolved: {originalRef.FullDescription()}", nameof(originalRef));
         AddPatchMethod(resolved, patchType, patchMethod);
     }
-    
+
     public void AddPatchMethod(MethodDefinition originalDef, HarmonyPatchType patchType, CompileTimePreludeMethod patchMethod)
     {
-        var resolved = originalDef.Resolve();
-        if (resolved is null)
-            throw new ArgumentException("Original method reference could not be resolved");
         EnsureOriginalMethodEntry(originalDef, out var originalEntry);
         
         var patchEntry = new PatchEntry(originalEntry, patchType, patchMethod);
@@ -104,6 +125,11 @@ public class CompileTimePatchRegistry : ICompileTimePatchRegistry
             throw new NotSupportedException("Transpilers are not supported in CompileTimePatchRegistry");
     }
 
+    public void AddPatchMethod(MethodReference originalRef, CompileTimePreludePatch patchInfo)
+    {
+        AddPatchMethod(originalRef, patchInfo.PatchType, patchInfo.PatchMethod);
+    }
+    
     public void AddPatchMethod(MethodDefinition originalDef, CompileTimePreludePatch patchInfo)
     {
         AddPatchMethod(originalDef, patchInfo.PatchType, patchInfo.PatchMethod);

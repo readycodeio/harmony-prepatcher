@@ -2,7 +2,7 @@
 
 namespace PreludeLib.CompileTime.Backend;
 
-public interface ICompileTimePreludeBackend
+public interface ICompileTimeBackend
 {
     void Commit(ICompileTimePatchRegistry registry);
 }

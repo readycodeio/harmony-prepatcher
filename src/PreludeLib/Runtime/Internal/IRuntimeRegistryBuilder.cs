@@ -1,16 +1,15 @@
 ﻿using System.Reflection;
 using HarmonyLib;
 
-namespace PreludeLib.Runtime.Backend;
+namespace PreludeLib.Runtime.Internal;
 
-public interface IPreludeBackend
+internal interface IRuntimeRegistryBuilder
 {
-    IPreludePatchProcessor CreateProcessor(MethodBase original);
-    IPreludeClassProcessor CreateClassProcessor(Type type);
-
-    void PatchAll(Assembly patchAssembly);
-    void PatchCategory(Assembly patchAssembly, string category);
-    void PatchAllUncategorized(Assembly patchAssembly);
+    void ScanAndPatchAll(Assembly patchAssembly);
+    void ScanAndPatchCategory(Assembly patchAssembly, string? category);
+    void ScanAndPatchUncategorized(Assembly patchAssembly);
+    void ScanAndPatch(Type containerType);
+    
     void Patch(
         MethodBase original,
         HarmonyMethod? prefix = null,
@@ -18,8 +17,12 @@ public interface IPreludeBackend
         HarmonyMethod? finalizer = null,
         HarmonyMethod? transpiler = null
     );
+    void Patch(MethodBase original, HarmonyPatchType patchType, HarmonyMethod patchMethod);
+    void PatchPrefix(MethodBase original, HarmonyMethod prefix);
+    void PatchPostfix(MethodBase original, HarmonyMethod prefix);
+    void PatchFinalizer(MethodBase original, HarmonyMethod prefix);
     
-    public void UnpatchAll();
+    void UnpatchAll();
     void UnpatchAll(Assembly patchAssembly);
     void UnpatchCategory(Assembly patchAssembly, string category);
     void UnpatchUncategorized(Assembly patchAssembly);

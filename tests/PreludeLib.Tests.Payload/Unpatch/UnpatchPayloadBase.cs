@@ -1,7 +1,6 @@
 ﻿using System.Reflection;
 using HarmonyLib;
 using Microsoft.Extensions.Logging;
-using PreludeLib.Runtime;
 using PreludeLib.Tests.Examples;
 using PreludeLib.Tests.Patches.Unpatch;
 using Xunit;
@@ -13,9 +12,9 @@ public abstract class UnpatchPayloadBase(bool shouldPass, ILogger logger) : Back
     public void UnpatchSpecificPrefix_MiddleRemoval_KeepsOrderStable()
     {
         var id = GenerateId(nameof(UnpatchSpecificPrefix_MiddleRemoval_KeepsOrderStable));
-        Logger.LogDebug("ID: {id}", id);
+        var builder = CreateBuilder(id);
+        var owner = GetOrCreatePrelude();
         
-        var backend = CreateBackend(id);
         try
         {
             UnpatchProbes.Reset();
@@ -25,9 +24,10 @@ public abstract class UnpatchPayloadBase(bool shouldPass, ILogger logger) : Back
             Assert.Equal([], UnpatchProbes.Steps);
             Assert.Equal(1, r0);
 
-            backend.CreateClassProcessor(typeof(UnpatchPrefixA)).Patch();
-            backend.CreateClassProcessor(typeof(UnpatchPrefixB)).Patch();
-            backend.CreateClassProcessor(typeof(UnpatchPrefixC)).Patch();
+            builder.ScanAndPatch(typeof(UnpatchPrefixA));
+            builder.ScanAndPatch(typeof(UnpatchPrefixB));
+            builder.ScanAndPatch(typeof(UnpatchPrefixC));
+            owner.Commit();
 
             // Initial run: expect A -> B -> C
             int r1 = t.Compute(1);
@@ -39,7 +39,8 @@ public abstract class UnpatchPayloadBase(bool shouldPass, ILogger logger) : Back
 
             var original = typeof(UnpatchTargets).GetMethod(nameof(UnpatchTargets.Compute))!;
             var bPatchMethod = typeof(UnpatchPrefixB).GetMethod("Prefix", BindingFlags.Public | BindingFlags.Static)!;
-            backend.Unpatch(original, bPatchMethod); // <-- corrected overload
+            builder.Unpatch(original, bPatchMethod); // <-- corrected overload
+            owner.Commit();
 
             // Run again: expect A -> C with same relative order
             int r2 = t.Compute(1);
@@ -49,7 +50,8 @@ public abstract class UnpatchPayloadBase(bool shouldPass, ILogger logger) : Back
             UnpatchProbes.Steps.Clear();
 
             var aPatchMethod = typeof(UnpatchPrefixA).GetMethod("Prefix", BindingFlags.Public | BindingFlags.Static)!;
-            backend.Unpatch(original, aPatchMethod); // <-- corrected overload
+            builder.Unpatch(original, aPatchMethod); // <-- corrected overload
+            owner.Commit();
 
             // Run again: expect C with same relative order
             t.Compute(1);
@@ -57,7 +59,8 @@ public abstract class UnpatchPayloadBase(bool shouldPass, ILogger logger) : Back
 
             UnpatchProbes.Steps.Clear();
 
-            backend.Patch(original, prefix: new HarmonyMethod(bPatchMethod)); // <-- corrected overload
+            builder.Patch(original, prefix: new HarmonyMethod(bPatchMethod)); // <-- corrected overload
+            owner.Commit();
 
             // Run again: expect C with same relative order
             t.Compute(1);
@@ -66,7 +69,8 @@ public abstract class UnpatchPayloadBase(bool shouldPass, ILogger logger) : Back
         }
         finally
         {
-            backend.UnpatchAll();
+            builder.UnpatchAll();
+            owner.Commit();
         }
     }
     
@@ -75,11 +79,13 @@ public abstract class UnpatchPayloadBase(bool shouldPass, ILogger logger) : Back
         // Patch with two distinct owners; apply A first then B.
         // Then unpatch A (not reverse order), B remains.
         var id = GenerateId(nameof(UnpatchSpecificPrefix_MiddleRemoval_KeepsOrderStable));
-        var backendA = CreateBackend($"{id}-{UnpatchOwners.OwnerA}");
-        var backendB = CreateBackend($"{id}-{UnpatchOwners.OwnerB}");
+        var builderA = CreateBuilder($"{id}-{UnpatchOwners.OwnerA}");
+        var builderB = CreateBuilder($"{id}-{UnpatchOwners.OwnerB}");
+        var owner = GetOrCreatePrelude();
 
-        backendA.CreateClassProcessor(typeof(OwnerA_PrefixPatch)).Patch();
-        backendB.CreateClassProcessor(typeof(OwnerB_PrefixPatch)).Patch();
+        builderA.ScanAndPatch(typeof(OwnerA_PrefixPatch));
+        builderB.ScanAndPatch(typeof(OwnerB_PrefixPatch));
+        owner.Commit();
 
         try
         {
@@ -93,7 +99,8 @@ public abstract class UnpatchPayloadBase(bool shouldPass, ILogger logger) : Back
 
             // Unpatch ONLY OwnerA (order-independent)
             UnpatchProbes.Steps.Clear();
-            backendA.UnpatchAll();
+            builderA.UnpatchAll();
+            owner.Commit();
 
             int r2 = t.Compute(1); // only B now
             Assert.Equal(new[] { "B" }, UnpatchProbes.Steps);
@@ -101,18 +108,22 @@ public abstract class UnpatchPayloadBase(bool shouldPass, ILogger logger) : Back
         }
         finally
         {
-            backendA.UnpatchAll();
-            backendB.UnpatchAll();
+            builderA.UnpatchAll();
+            builderB.UnpatchAll();
+            owner.Commit();
         }
     }
 
     public void UnpatchSpecificPostfix_LeavesPrefixAndFinalizerActive()
     {
         var id = GenerateId(nameof(UnpatchSpecificPostfix_LeavesPrefixAndFinalizerActive));
-        var backend = CreateBackend(id);
-        backend.CreateClassProcessor(typeof(MixedPrefixPatch)).Patch();
-        backend.CreateClassProcessor(typeof(MixedPostfixPatch)).Patch();
-        backend.CreateClassProcessor(typeof(MixedFinalizerPatch)).Patch();
+        var builder = CreateBuilder(id);
+        var owner = GetOrCreatePrelude();
+        
+        builder.ScanAndPatch(typeof(MixedPrefixPatch));
+        builder.ScanAndPatch(typeof(MixedPostfixPatch));
+        builder.ScanAndPatch(typeof(MixedFinalizerPatch));
+        owner.Commit();
 
         try
         {
@@ -127,7 +138,8 @@ public abstract class UnpatchPayloadBase(bool shouldPass, ILogger logger) : Back
             // Remove ONLY the postfix by its MethodInfo
             UnpatchProbes.Steps.Clear();
             var original = typeof(UnpatchTargets).GetMethod(nameof(UnpatchTargets.Compute))!;
-            backend.Unpatch(original, MixedPostfixPatch.MethodInfo()); // <-- corrected overload
+            builder.Unpatch(original, MixedPostfixPatch.MethodInfo()); // <-- corrected overload
+            owner.Commit();
 
             int r2 = t.Compute(2); // Prefix only: 2->21 ; Finalizer runs; no +100
             Assert.Equal(new[] { "Pre", "Fin" }, UnpatchProbes.Steps);
@@ -135,7 +147,8 @@ public abstract class UnpatchPayloadBase(bool shouldPass, ILogger logger) : Back
         }
         finally
         {
-            backend.UnpatchAll();
+            builder.UnpatchAll();
+            owner.Commit();
         }
     }
 }

@@ -70,7 +70,7 @@ public class CompileTimePreludeMethod
 				// This causes the value of a HarmonyPriority attribute to be overriden by the next attribute if it is not merged last
 				// should be removed by making priority nullable and default to null at some point
 				if (val is not null && (f != nameof(Priority) || (int)val != -1))
-					CompileTimePreludeMethodExtensions.SetValue(resultTrv, f, val);
+					CompileTimePreludeMethodUtils.SetValue(resultTrv, f, val);
 			});
 		});
 		return result;

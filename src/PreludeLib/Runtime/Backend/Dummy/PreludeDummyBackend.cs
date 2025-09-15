@@ -1,79 +1,10 @@
-﻿using System.Reflection;
-using HarmonyLib;
+﻿using PreludeLib.Runtime.Registry;
 
 namespace PreludeLib.Runtime.Backend.Dummy;
 
-public class PreludeDummyBackend(string id) : IPreludeBackend
+public class RuntimeDummyBackend() : IRuntimeBackend
 {
-    public readonly string Id = id;
-
-    public IPreludePatchProcessor CreateProcessor(MethodBase original)
-        => new PreludeDummyPatchProcessor(this, original);
-
-    public IPreludeClassProcessor CreateClassProcessor(Type type)
-        => new PreludeDummyClassProcessor(this, type);
-
-    public void PatchAll(Assembly patchAssembly)
-    {
-        // no-op
-    }
-
-    public void PatchCategory(Assembly patchAssembly, string category)
-    {
-        // no-op
-    }
-
-    public void PatchAllUncategorized(Assembly patchAssembly)
-    {
-        // no-op
-    }
-
-    public void Patch(
-        MethodBase original,
-        HarmonyMethod? prefix = null,
-        HarmonyMethod? postfix = null,
-        HarmonyMethod? finalizer = null,
-        HarmonyMethod? transpiler = null)
-    {
-        // no-op
-    }
-
-    public void UnpatchAll()
-    {
-        // no-op
-    }
-
-    public void UnpatchAll(Assembly patchAssembly)
-    {
-        // no-op
-    }
-
-    public void UnpatchCategory(Assembly patchAssembly, string category)
-    {
-        // no-op
-    }
-
-    public void UnpatchUncategorized(Assembly patchAssembly)
-    {
-        // no-op
-    }
-
-    public void UnpatchCategory(string category)
-    {
-        // no-op
-    }
-
-    public void UnpatchUncategorized()
-    {
-        // no-op
-    }
-
-    public void Unpatch(MethodBase original, HarmonyPatchType patchType)
-    {
-        // no-op
-    }
-
-    public void Unpatch(MethodBase original, MethodInfo patch)
+    public void Commit(IRuntimePatchRegistry registry)
     {
         // no-op
     }

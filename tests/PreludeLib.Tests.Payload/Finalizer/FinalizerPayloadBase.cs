@@ -11,8 +11,11 @@ public abstract class FinalizerPayloadBase(bool shouldPass, ILogger logger) : Ba
     public void FinalizerReceivesExceptionWhenOriginalThrows()
     {
         var id = GenerateId(nameof(FinalizerReceivesExceptionWhenOriginalThrows));
-        var backend = CreateBackend(id);
-        backend.CreateClassProcessor(typeof(FinalizerObservePatch)).Patch();
+        var builder = CreateBuilder(id);
+        var owner = GetOrCreatePrelude();
+        
+        builder.ScanAndPatch(typeof(FinalizerObservePatch));
+        owner.Commit();
 
         try
         {
@@ -30,15 +33,19 @@ public abstract class FinalizerPayloadBase(bool shouldPass, ILogger logger) : Ba
         finally
         {
             FinalizerProbes.Reset();
-            backend.UnpatchAll();
+            builder.UnpatchAll();
+            owner.Commit();
         }
     }
 
     public void FinalizerCanSuppressExceptionByReturningNull()
     {
         var id = GenerateId(nameof(FinalizerCanSuppressExceptionByReturningNull));
-        var backend = CreateBackend(id);
-        backend.CreateClassProcessor(typeof(FinalizerSuppressPatch)).Patch();
+        var builder = CreateBuilder(id);
+        var owner = GetOrCreatePrelude();
+        
+        builder.ScanAndPatch(typeof(FinalizerSuppressPatch));
+        owner.Commit();
 
         try
         {
@@ -63,15 +70,19 @@ public abstract class FinalizerPayloadBase(bool shouldPass, ILogger logger) : Ba
         }
         finally
         {
-            backend.UnpatchAll();
+            builder.UnpatchAll();
+            owner.Commit();
         }
     }
 
     public void FinalizerRunsOnSuccessfulExecutionAndSeesNullException()
     {
         var id = GenerateId(nameof(FinalizerRunsOnSuccessfulExecutionAndSeesNullException));
-        var backend = CreateBackend(id);
-        backend.CreateClassProcessor(typeof(FinalizerObservePatch)).Patch();
+        var builder = CreateBuilder(id);
+        var owner = GetOrCreatePrelude();
+        
+        builder.ScanAndPatch(typeof(FinalizerObservePatch));
+        owner.Commit();
 
         try
         {
@@ -86,7 +97,7 @@ public abstract class FinalizerPayloadBase(bool shouldPass, ILogger logger) : Ba
         }
         finally
         {
-            backend.UnpatchAll();
+            builder.UnpatchAll();
         }
     }
 }

@@ -10,8 +10,11 @@ public abstract class PostfixPayloadBase(bool shouldPass, ILogger logger) : Back
     public void PostfixCanReadAndModify__result()
     {
         var id = GenerateId(nameof(PostfixCanReadAndModify__result));
-        var backend = CreateBackend(id);
-        backend.CreateClassProcessor(typeof(PostfixModifyResultPatch)).Patch();
+        var builder = CreateBuilder(id);
+        var owner = GetOrCreatePrelude();
+
+        builder.ScanAndPatch(typeof(PostfixModifyResultPatch));
+        owner.Commit();
 
         try
         {
@@ -22,15 +25,19 @@ public abstract class PostfixPayloadBase(bool shouldPass, ILogger logger) : Back
         }
         finally
         {
-            backend.UnpatchAll();
+            builder.UnpatchAll();
+            owner.Commit();
         }
     }
 
     public void PostfixOnVoidMethodExecutes()
     {
         var id = GenerateId(nameof(PostfixOnVoidMethodExecutes));
-        var backend = CreateBackend(id);
-        backend.CreateClassProcessor(typeof(PostfixOnVoidPatch)).Patch();
+        var builder = CreateBuilder(id);
+        var owner = GetOrCreatePrelude();
+
+        builder.ScanAndPatch(typeof(PostfixOnVoidPatch));
+        owner.Commit();
 
         try
         {
@@ -43,15 +50,19 @@ public abstract class PostfixPayloadBase(bool shouldPass, ILogger logger) : Back
         }
         finally
         {
-            backend.UnpatchAll();
+            builder.UnpatchAll();
+            owner.Commit();
         }
     }
 
     public void PostfixReceivesStateFromPrefixVia__state()
     {
         var id = GenerateId(nameof(PostfixReceivesStateFromPrefixVia__state));
-        var backend = CreateBackend(id);
-        backend.CreateClassProcessor(typeof(PostfixStatePatch)).Patch();
+        var backend = CreateBuilder(id);
+        var owner = GetOrCreatePrelude();
+        
+        backend.ScanAndPatch(typeof(PostfixStatePatch));
+        owner.Commit();
 
         try
         {
@@ -63,14 +74,18 @@ public abstract class PostfixPayloadBase(bool shouldPass, ILogger logger) : Back
         finally
         {
             backend.UnpatchAll();
+            owner.Commit();
         }
     }
 
     public void PostfixSeesArgsAfterPrefixModifications()
     {
         var id = GenerateId(nameof(PostfixSeesArgsAfterPrefixModifications));
-        var backend = CreateBackend(id);
-        backend.CreateClassProcessor(typeof(PostfixSeesArgsAfterPrefixPatch)).Patch();
+        var builder = CreateBuilder(id);
+        var owner = GetOrCreatePrelude();
+        
+        builder.ScanAndPatch(typeof(PostfixSeesArgsAfterPrefixPatch));
+        owner.Commit();
 
         try
         {
@@ -86,7 +101,8 @@ public abstract class PostfixPayloadBase(bool shouldPass, ILogger logger) : Back
         }
         finally
         {
-            backend.UnpatchAll();
+            builder.UnpatchAll();
+            owner.Commit();
         }
     }
 }

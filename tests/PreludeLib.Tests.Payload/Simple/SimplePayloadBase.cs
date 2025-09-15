@@ -29,11 +29,14 @@ public abstract class SimplePayloadBase(bool shouldPass, ILogger logger) : Backe
     {
         // Arrange
         var id = GenerateId(nameof(Patched_Add_LogsPrefixAndPostfix_AndReturnsSameResult));
-        var backend = CreateBackend(id);
+        var builder = CreateBuilder(id);
+        var owner = GetOrCreatePrelude();
+        
         TestLoggerProvider.Logger.Clear();
 
         // Apply all patches defined in CalculatorPatches
-        backend.CreateClassProcessor(typeof(CalculatorPatches)).Patch();
+        builder.ScanAndPatch(typeof(CalculatorPatches));
+        owner.Commit();
 
         try
         {
@@ -52,7 +55,8 @@ public abstract class SimplePayloadBase(bool shouldPass, ILogger logger) : Backe
         }
         finally
         {
-            backend.UnpatchAll();
+            builder.UnpatchAll();
+            owner.Commit();
         }
     }
     
@@ -60,10 +64,13 @@ public abstract class SimplePayloadBase(bool shouldPass, ILogger logger) : Backe
     {
         // Arrange
         var id = GenerateId(nameof(Patched_Divide_ByZero_IsHandledByPrefix_ReturnsZero_AndFinalizerLogsSuccess));
-        var backend = CreateBackend(id);
+        var builder = CreateBuilder(id);
+        var owner = GetOrCreatePrelude();
+        
         TestLoggerProvider.Logger.Clear();
 
-        backend.CreateClassProcessor(typeof(CalculatorPatches)).Patch();
+        builder.ScanAndPatch(typeof(CalculatorPatches));
+        owner.Commit();
 
         try
         {
@@ -92,7 +99,8 @@ public abstract class SimplePayloadBase(bool shouldPass, ILogger logger) : Backe
         }
         finally
         {
-            backend.UnpatchAll();
+            builder.UnpatchAll();
+            owner.Commit();
         }
     }
 
@@ -100,7 +108,9 @@ public abstract class SimplePayloadBase(bool shouldPass, ILogger logger) : Backe
     {
         // Arrange: patch ONLY the finalizer so original throws
         var id = GenerateId(nameof(FinalizerOnly_CatchesException_AndDoesNotSuppressIt));
-        var backend = CreateBackend(id);
+        var builder = CreateBuilder(id);
+        var owner = GetOrCreatePrelude();
+        
         TestLoggerProvider.Logger.Clear();
 
         // Patch Divide with finalizer only
@@ -113,7 +123,8 @@ public abstract class SimplePayloadBase(bool shouldPass, ILogger logger) : Backe
         Assert.NotNull(originalDivide);
 
         var finalizer = new HarmonyMethod(typeof(CalculatorPatches).GetMethod(nameof(CalculatorPatches.DivideFinalizer), BindingFlags.Public | BindingFlags.Static)!);
-        backend.Patch(originalDivide, finalizer: finalizer);
+        builder.Patch(originalDivide, finalizer: finalizer);
+        owner.Commit();
 
         try
         {
@@ -129,7 +140,8 @@ public abstract class SimplePayloadBase(bool shouldPass, ILogger logger) : Backe
         }
         finally
         {
-            backend.UnpatchAll();
+            builder.UnpatchAll();
+            owner.Commit();
         }
     }
 
@@ -137,10 +149,13 @@ public abstract class SimplePayloadBase(bool shouldPass, ILogger logger) : Backe
     {
         // Arrange
         var id = GenerateId(nameof(Patched_Divide_NormalOperands_UnchangedResult_AndFinalizerLogsSuccess));
-        var backend = CreateBackend(id);
+        var builder = CreateBuilder(id);
+        var owner = GetOrCreatePrelude();
+        
         TestLoggerProvider.Logger.Clear();
 
-        backend.CreateClassProcessor(typeof(CalculatorPatches)).Patch();
+        builder.ScanAndPatch(typeof(CalculatorPatches));
+        owner.Commit();
 
         try
         {
@@ -159,7 +174,8 @@ public abstract class SimplePayloadBase(bool shouldPass, ILogger logger) : Backe
         }
         finally
         {
-            backend.UnpatchAll();
+            builder.UnpatchAll();
+            owner.Commit();
         }
     }
 }

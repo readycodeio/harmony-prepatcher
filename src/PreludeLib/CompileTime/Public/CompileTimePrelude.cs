@@ -1,64 +1,63 @@
 ﻿using HarmonyLib;
 using Mono.Cecil;
 using PreludeLib.CompileTime.Backend;
+using PreludeLib.CompileTime.Internal;
 using PreludeLib.CompileTime.Registry;
 
 namespace PreludeLib.CompileTime.Public;
 
-public class CompileTimePrelude : ICompileTimePreludeAttributeScanner, ICompileTimePreludeRegistryBuilder
+public class CompileTimePrelude : ICompileTimeRegistryBuilder
 {
     private readonly CompileTimePatchRegistry _registry;
-    private readonly CompileTimePreludeRegistryBuilder _registryBuilder;
-    private readonly CompileTimePreludeAttributeScanner _scanner;
-    private readonly ICompileTimePreludeBackend _backend;
+    private readonly CompileTimeRegistryBuilder _builder;
+    private readonly ICompileTimeBackend _backend;
     
-    public CompileTimePrelude(ICompileTimePreludeBackend backend)
+    public CompileTimePrelude(ICompileTimeBackend backend)
     {
         _backend = backend;
 
         _registry = new CompileTimePatchRegistry();
-        _registryBuilder = new CompileTimePreludeRegistryBuilder(_registry);
-        _scanner = new CompileTimePreludeAttributeScanner(_registryBuilder);
+        _builder = new CompileTimeRegistryBuilder(_registry);
     }
 
-    public void PatchAdd(
+    public void ScanAndPatchAll(AssemblyDefinition patchAssemblyDef)
+        => _builder.ScanAndPatchAll(patchAssemblyDef);
+
+    public void ScanAndPatchCategory(AssemblyDefinition patchAssemblyDef, string category)
+        => _builder.ScanAndPatchCategory(patchAssemblyDef, category);
+
+    public void ScanAndPatchUncategorized(AssemblyDefinition patchAssemblyDef)
+        => _builder.ScanAndPatchUncategorized(patchAssemblyDef);
+
+    public void ScanAndPatch(TypeReference containerTypeRef)
+        => _builder.ScanAndPatch(containerTypeRef);
+
+    public void ScanAndPatch(TypeDefinition containerTypeDef)
+        => _builder.ScanAndPatch(containerTypeDef);
+
+    public void Patch(
         MethodDefinition originalDef,
         CompileTimePreludeMethod? prefix = null,
         CompileTimePreludeMethod? postfix = null,
         CompileTimePreludeMethod? finalizer = null,
         CompileTimePreludeMethod? transpiler = null)
-        => _registryBuilder.PatchAdd(originalDef, prefix, postfix, finalizer, transpiler);
+        => _builder.Patch(originalDef, prefix, postfix, finalizer, transpiler);
 
-    public void PatchAdd(MethodReference originalDef, CompileTimePreludePatch patch)
-        => _registryBuilder.PatchAdd(originalDef, patch);
+    public void Patch(MethodReference originalDef, CompileTimePreludePatch patch)
+        => _builder.Patch(originalDef, patch);
 
-    public void PatchAdd(MethodReference originalDef, HarmonyPatchType patchType, CompileTimePreludeMethod patchMethod)
-        => _registryBuilder.PatchAdd(originalDef, patchType, patchMethod);
+    public void Patch(MethodReference originalDef, HarmonyPatchType patchType, CompileTimePreludeMethod patchMethod)
+        => _builder.Patch(originalDef, patchType, patchMethod);
 
-    public void PatchAddPrefix(MethodReference originalDef, CompileTimePreludeMethod prefix)
-        => _registryBuilder.PatchAddPrefix(originalDef, prefix);
+    public void PatchPrefix(MethodReference originalDef, CompileTimePreludeMethod prefix)
+        => _builder.PatchPrefix(originalDef, prefix);
 
-    public void PatchAddPostfix(MethodReference originalDef, CompileTimePreludeMethod prefix)
-        => _registryBuilder.PatchAddPostfix(originalDef, prefix);
+    public void PatchPostfix(MethodReference originalDef, CompileTimePreludeMethod prefix)
+        => _builder.PatchPostfix(originalDef, prefix);
 
-    public void PatchAddFinalizer(MethodReference originalDef, CompileTimePreludeMethod prefix)
-        => _registryBuilder.PatchAddFinalizer(originalDef, prefix);
+    public void PatchFinalizer(MethodReference originalDef, CompileTimePreludeMethod prefix)
+        => _builder.PatchFinalizer(originalDef, prefix);
 
-    public void ScanAndPatchAll(AssemblyDefinition patchAssemblyDef)
-        => _scanner.ScanAndPatchAll(patchAssemblyDef);
-
-    public void ScanAndPatchCategory(AssemblyDefinition patchAssemblyDef, string category)
-        => _scanner.ScanAndPatchCategory(patchAssemblyDef, category);
-
-    public void ScanAndPatchUncategorized(AssemblyDefinition patchAssemblyDef)
-        => _scanner.ScanAndPatchUncategorized(patchAssemblyDef);
-
-    public void ScanAndPatch(TypeReference containerTypeRef)
-        => _scanner.ScanAndPatch(containerTypeRef);
-
-    public void ScanAndPatch(TypeDefinition containerTypeDef)
-        => _scanner.ScanAndPatch(containerTypeDef);
-    
     public void Commit()
         => _backend.Commit(_registry);
 }

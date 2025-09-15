@@ -5,7 +5,7 @@ using PreludeLib.Runtime.Backend.WeaverCallback;
 
 namespace PreludeLib.Runtime.Utils;
 
-public static class MethodUtils
+public static class RuntimePreludeMethodUtils
 {
     private readonly struct CacheKey(Type returnType, Type[] paramTypes, ParameterAttributes[] paramAttributes) : IEquatable<CacheKey>
     {

@@ -1,16 +1,16 @@
 ﻿using Microsoft.Extensions.Logging;
 using Mono.Cecil;
-using PreludeLib.CompileTime.Backend;
+using PreludeLib.CompileTime.Backend.WeaverCallback;
 using PreludeLib.CompileTime.Public;
-using PreludeLib.Runtime;
+using PreludeLib.Runtime.Backend;
 using PreludeLib.Runtime.Backend.WeaverCallback;
 
 namespace PreludeLib.Payload.Simple;
 
 public class WeaverSimplePayload(ILogger logger) : SimplePayloadBase(true, logger)
 {
-    protected override IPreludeBackend CreateBackend(string id)
-        => new PreludeWeaverBackend(id);
+    protected override IRuntimeBackend CreateBackend()
+        => new RuntimeWeaverBackend(Logger);
 
     public void Preprocess(string path)
     {

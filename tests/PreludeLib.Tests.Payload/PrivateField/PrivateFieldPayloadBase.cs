@@ -10,8 +10,11 @@ public abstract class PrivateFieldPayloadBase(bool shouldPass, ILogger logger) :
     public void PrefixCanReadPrivateFieldViaTripleUnderscore()
     {
         var id = GenerateId(nameof(PrefixCanReadPrivateFieldViaTripleUnderscore));
-        var backend = CreateBackend(id);
-        backend.CreateClassProcessor(typeof(PrivateFieldReadPrefixPatch)).Patch();
+        var builder = CreateBuilder(id);
+        var owner = GetOrCreatePrelude();
+        
+        builder.ScanAndPatch(typeof(PrivateFieldReadPrefixPatch));
+        owner.Commit();
 
         try
         {
@@ -27,15 +30,19 @@ public abstract class PrivateFieldPayloadBase(bool shouldPass, ILogger logger) :
         }
         finally
         {
-            backend.UnpatchAll();
+            builder.UnpatchAll();
+            owner.Commit();
         }
     }
     
     public void PrefixCanModifyPrivateFieldViaRefTripleUnderscore()
     {
         var id = GenerateId(nameof(PrefixCanModifyPrivateFieldViaRefTripleUnderscore));
-        var backend = CreateBackend(id);
-        backend.CreateClassProcessor(typeof(PrivateFieldModifyAndObservePatch)).Patch();
+        var builder = CreateBuilder(id);
+        var owner = GetOrCreatePrelude();
+        
+        builder.ScanAndPatch(typeof(PrivateFieldModifyAndObservePatch));
+        owner.Commit();
 
         try
         {
@@ -51,15 +58,19 @@ public abstract class PrivateFieldPayloadBase(bool shouldPass, ILogger logger) :
         }
         finally
         {
-            backend.UnpatchAll();
+            builder.UnpatchAll();
+            owner.Commit();
         }
     }
 
     public void PostfixCanObservePrivateFieldChangesFromPrefix()
     {
         var id = GenerateId(nameof(PostfixCanObservePrivateFieldChangesFromPrefix));
-        var backend = CreateBackend(id);
-        backend.CreateClassProcessor(typeof(PrivateFieldModifyAndObservePatch)).Patch();
+        var builder = CreateBuilder(id);
+        var owner = GetOrCreatePrelude();
+        
+        builder.ScanAndPatch(typeof(PrivateFieldModifyAndObservePatch));
+        owner.Commit();
 
         try
         {
@@ -75,7 +86,8 @@ public abstract class PrivateFieldPayloadBase(bool shouldPass, ILogger logger) :
         }
         finally
         {
-            backend.UnpatchAll();
+            builder.UnpatchAll();
+            owner.Commit();
         }
     }
 }

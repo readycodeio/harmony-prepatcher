@@ -10,10 +10,12 @@ public abstract class CategoryPayloadBase(bool shouldPass, ILogger logger) : Bac
     public void PatchCategoryAppliesOnlySpecifiedCategories()
     {
         var id = GenerateId(nameof(PatchCategoryAppliesOnlySpecifiedCategories));
-        var backend = CreateBackend(id);
+        var builder = CreateBuilder(id);
+        var owner = GetOrCreatePrelude();
 
         // Apply ONLY "alpha" category from THIS payload assembly
-        backend.PatchCategory(typeof(CategoryHelper).Assembly, "alpha");
+        builder.ScanAndPatchCategory(typeof(CategoryHelper).Assembly, "alpha");
+        owner.Commit();
 
         try
         {
@@ -28,17 +30,20 @@ public abstract class CategoryPayloadBase(bool shouldPass, ILogger logger) : Bac
         }
         finally
         {
-            backend.UnpatchAll();
+            builder.UnpatchAll();
+            owner.Commit();
         }
     }
 
     public void PatchAllUncategorizedAppliesOnlyUncategorizedPatches()
     {
         var id = GenerateId(nameof(PatchAllUncategorizedAppliesOnlyUncategorizedPatches));
-        var harmony = CreateBackend(id);
+        var builder = CreateBuilder(id);
+        var owner = GetOrCreatePrelude();
 
         // Apply ONLY patch classes WITHOUT a category from THIS payload assembly
-        harmony.PatchAllUncategorized(typeof(CategoryHelper).Assembly);
+        builder.ScanAndPatchUncategorized(typeof(CategoryHelper).Assembly);
+        owner.Commit();
 
         try
         {
@@ -52,7 +57,8 @@ public abstract class CategoryPayloadBase(bool shouldPass, ILogger logger) : Bac
         }
         finally
         {
-            harmony.UnpatchAll();
+            builder.UnpatchAll();
+            owner.Commit();
         }
     }
 }

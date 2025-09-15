@@ -1,11 +1,12 @@
 ﻿using Microsoft.Extensions.Logging;
 using PreludeLib.Runtime;
+using PreludeLib.Runtime.Backend;
 using PreludeLib.Runtime.Backend.Dummy;
 
 namespace PreludeLib.Payload.Targeting;
 
 public class DummyTargetingPayload(ILogger logger) : TargetingPayloadBase(false, logger)
 {
-    protected override IPreludeBackend CreateBackend(string id)
-        => new PreludeDummyBackend(id);    
+    protected override IRuntimeBackend CreateBackend()
+        => new RuntimeDummyBackend();
 }

@@ -1,10 +1,11 @@
 ﻿using System.Text;
 using HarmonyLib;
 using Mono.Cecil;
+using PreludeLib.CompileTime.Public;
 
 namespace PreludeLib.CompileTime.Utils;
 
-public static class CompileTimeCecilExtensions
+public static class CompileTimePreludeCecilUtils
 {
     public static IEnumerable<TypeDefinition> GetTypesFromAssemblyDef(AssemblyDefinition asmDef)
     {

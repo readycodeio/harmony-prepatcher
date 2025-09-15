@@ -1,10 +1,9 @@
 ﻿using HarmonyLib;
 using Mono.Cecil;
 using Mono.Cecil.Rocks;
-using PreludeLib.CompileTime.Public;
 using PreludeLib.CompileTime.Utils;
 
-namespace PreludeLib.CompileTime;
+namespace PreludeLib.CompileTime.Public;
 
 public class CompileTimePreludePatch(HarmonyPatchType patchType, CompileTimePreludeMethod patchMethod)
 {

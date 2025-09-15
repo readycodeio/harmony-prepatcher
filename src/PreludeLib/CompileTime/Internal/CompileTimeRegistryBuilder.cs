@@ -1,10 +1,12 @@
 ﻿using HarmonyLib;
 using Mono.Cecil;
+using PreludeLib.CompileTime.Public;
+using PreludeLib.CompileTime.Registry;
 using PreludeLib.CompileTime.Utils;
 
-namespace PreludeLib.CompileTime.Public;
+namespace PreludeLib.CompileTime.Internal;
 
-internal class CompileTimePreludeAttributeScanner(ICompileTimePreludeRegistryBuilder registryBuilder) : ICompileTimePreludeAttributeScanner
+internal class CompileTimeRegistryBuilder(ICompileTimePatchRegistry registry) : ICompileTimeRegistryBuilder
 {
     public void ScanAndPatchAll(AssemblyDefinition patchAssemblyDef)
     {
@@ -48,7 +50,7 @@ internal class CompileTimePreludeAttributeScanner(ICompileTimePreludeRegistryBui
 
     public void ScanAndPatch(TypeDefinition containerTypeDef)
     {
-        var methodsList = CompileTimePreludeMethodExtensions.GetFromTypeDef(containerTypeDef);
+        var methodsList = CompileTimePreludeMethodUtils.GetFromTypeDef(containerTypeDef);
         
         var containerAttrs = CompileTimePreludeMethod.Merge(methodsList);
         containerAttrs.MethodType ??= MethodType.Normal;
@@ -59,7 +61,7 @@ internal class CompileTimePreludeAttributeScanner(ICompileTimePreludeRegistryBui
                 throw new ArgumentException($"Auxiliary methods are not supported in compile-time patching: {auxMethodName} in {containerTypeDef.FullName}");
         }
 
-        var patches = CompileTimeCecilExtensions.GetPatches(containerTypeDef.Module, containerTypeDef);
+        var patches = CompileTimePreludeCecilUtils.GetPatches(containerTypeDef.Module, containerTypeDef);
         foreach (var patch in patches)
         {
             var methodRef = patch.PatchMethod?.Method;
@@ -70,9 +72,48 @@ internal class CompileTimePreludeAttributeScanner(ICompileTimePreludeRegistryBui
             if (original == null)
                 continue;
             
-            registryBuilder.PatchAdd(original, patch);
+            Patch(original, patch);
         }
     }
+    
+    public void Patch(
+        MethodDefinition originalDef,
+        CompileTimePreludeMethod? prefix = null,
+        CompileTimePreludeMethod? postfix = null,
+        CompileTimePreludeMethod? finalizer = null,
+        CompileTimePreludeMethod? transpiler = null
+    )
+    {
+        if (prefix != null)
+            Patch(originalDef, HarmonyPatchType.Prefix, prefix);
+        if (postfix != null)
+            Patch(originalDef, HarmonyPatchType.Postfix, postfix);
+        if (finalizer != null)
+            Patch(originalDef, HarmonyPatchType.Finalizer, finalizer);
+        if (transpiler != null)
+            throw new NotSupportedException("Transpilers are not supported.");
+        // processor.AddInfix(infix);
+    }
+    
+    public void Patch(MethodReference originalDef, CompileTimePreludePatch patch)
+    {
+        Patch(originalDef, patch.PatchType, patch.PatchMethod);
+    }
+
+    public void Patch(MethodReference originalDef, HarmonyPatchType patchType, CompileTimePreludeMethod patchMethod)
+    {
+        registry.AddOriginalMethod(originalDef);
+        registry.AddPatchMethod(originalDef, patchType, patchMethod);
+    }
+
+    public void PatchPrefix(MethodReference originalDef, CompileTimePreludeMethod prefix)
+        => Patch(originalDef, HarmonyPatchType.Prefix, prefix);
+
+    public void PatchPostfix(MethodReference originalDef, CompileTimePreludeMethod prefix)
+        => Patch(originalDef, HarmonyPatchType.Postfix, prefix);
+
+    public void PatchFinalizer(MethodReference originalDef, CompileTimePreludeMethod prefix)
+        => Patch(originalDef, HarmonyPatchType.Finalizer, prefix);
     
     // ---
     
@@ -90,7 +131,7 @@ internal class CompileTimePreludeAttributeScanner(ICompileTimePreludeRegistryBui
 
     private static string? GetCategory(TypeDefinition typeDef)
     {
-        var harmonyAttributes = CompileTimePreludeMethodExtensions.GetFromTypeDef(typeDef);
+        var harmonyAttributes = CompileTimePreludeMethodUtils.GetFromTypeDef(typeDef);
         if (harmonyAttributes.Count == 0) 
             return null;
         var containerAttributes = CompileTimePreludeMethod.Merge(harmonyAttributes);
@@ -103,9 +144,9 @@ internal class CompileTimePreludeAttributeScanner(ICompileTimePreludeRegistryBui
             return result;
         
         result = [];
-        foreach (var typeDef in CompileTimeCecilExtensions.GetTypesFromAssemblyDef(patchAssemblyDef))
+        foreach (var typeDef in CompileTimePreludeCecilUtils.GetTypesFromAssemblyDef(patchAssemblyDef))
         {
-            if (!CompileTimeCecilExtensions.HasHarmonyAttributeDef(typeDef))
+            if (!CompileTimePreludeCecilUtils.HasHarmonyAttributeDef(typeDef))
                 continue;
             result.Add(typeDef);
         }

@@ -1,5 +1,6 @@
 ﻿using Microsoft.Extensions.Logging;
-using PreludeLib.Runtime;
+using PreludeLib.Runtime.Backend;
+using PreludeLib.Runtime.Public;
 
 namespace PreludeLib.Payload;
 
@@ -18,5 +19,20 @@ public abstract class BackendPayloadBase(bool shouldPass, ILogger logger)
         return $"test-{baseName}-{Guid.NewGuid():N}";
     }
 
-    protected abstract IPreludeBackend CreateBackend(string id);
+    protected abstract IRuntimeBackend CreateBackend();
+
+    private IRuntimeBackend? _backend;
+    private RuntimePrelude? _prelude;
+    
+    private IRuntimeBackend GetOrCreateBackend()
+        => _backend ??= CreateBackend();
+    
+    private RuntimePrelude CreatePrelude()
+        => new(GetOrCreateBackend());
+    
+    protected RuntimePrelude GetOrCreatePrelude()
+        => _prelude ??= CreatePrelude();
+
+    protected RuntimePreludeBuilder CreateBuilder(string id)
+        => GetOrCreatePrelude().Create(id);
 }

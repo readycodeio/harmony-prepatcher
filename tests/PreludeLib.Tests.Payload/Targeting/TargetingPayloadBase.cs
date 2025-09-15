@@ -10,8 +10,11 @@ public abstract class TargetingPayloadBase(bool shouldPass, ILogger logger) : Ba
     public void PatchByMethodNameAndSignatureTargetsCorrectOverload()
     {
         var id = GenerateId(nameof(PatchByMethodNameAndSignatureTargetsCorrectOverload));
-        var backend = CreateBackend(id);
-        backend.CreateClassProcessor(typeof(Overload2PostfixPatch)).Patch();
+        var builder = CreateBuilder(id);
+        var owner = GetOrCreatePrelude();
+        
+        builder.ScanAndPatch(typeof(Overload2PostfixPatch));
+        owner.Commit();
 
         try
         {
@@ -35,15 +38,19 @@ public abstract class TargetingPayloadBase(bool shouldPass, ILogger logger) : Ba
         }
         finally
         {
-            backend.UnpatchAll();
+            builder.UnpatchAll();
+            owner.Commit();
         }
     }
 
     public void PatchPropertyGetterWithMethodTypeGetter()
     {
         var id = GenerateId(nameof(PatchPropertyGetterWithMethodTypeGetter));
-        var backend = CreateBackend(id);
-        backend.CreateClassProcessor(typeof(PropertyGetterPostfixPatch)).Patch();
+        var builder = CreateBuilder(id);
+        var owner = GetOrCreatePrelude();
+        
+        builder.ScanAndPatch(typeof(PropertyGetterPostfixPatch));
+        owner.Commit();
 
         try
         {
@@ -61,15 +68,19 @@ public abstract class TargetingPayloadBase(bool shouldPass, ILogger logger) : Ba
         }
         finally
         {
-            backend.UnpatchAll();
+            builder.UnpatchAll();
+            owner.Commit();
         }
     }
 
     public void PatchConstructorWithMethodTypeConstructor()
     {
         var id = GenerateId(nameof(PatchConstructorWithMethodTypeConstructor));
-        var harmony = CreateBackend(id);
-        harmony.CreateClassProcessor(typeof(CtorIntPostfixPatch)).Patch();
+        var builder = CreateBuilder(id);
+        var owner = GetOrCreatePrelude();
+        
+        builder.ScanAndPatch(typeof(CtorIntPostfixPatch));
+        owner.Commit();
 
         try
         {
@@ -89,7 +100,8 @@ public abstract class TargetingPayloadBase(bool shouldPass, ILogger logger) : Ba
         }
         finally
         {
-            harmony.UnpatchAll();
+            builder.UnpatchAll();
+            owner.Commit();
         }
     }
 }

@@ -10,8 +10,11 @@ public abstract class OverloadArgPayloadBase(bool shouldPass, ILogger logger) : 
     public void PatchOverloadWithByRefArgumentUsingArgumentTypeRef()
     {
         var id = GenerateId(nameof(PatchOverloadWithByRefArgumentUsingArgumentTypeRef));
-        var backend = CreateBackend(id);
-        backend.CreateClassProcessor(typeof(IncRefOverloadPostfixPatch)).Patch();
+        var builder = CreateBuilder(id);
+        var owner = GetOrCreatePrelude();
+        
+        builder.ScanAndPatch(typeof(IncRefOverloadPostfixPatch));
+        owner.Commit();
 
         try
         {
@@ -29,15 +32,19 @@ public abstract class OverloadArgPayloadBase(bool shouldPass, ILogger logger) : 
         }
         finally
         {
-            backend.UnpatchAll();
+            builder.UnpatchAll();
+            owner.Commit();
         }
     }
     
     public void PatchOverloadWithOutArgumentUsingArgumentTypeOut()
     {
         var id = GenerateId(nameof(PatchOverloadWithOutArgumentUsingArgumentTypeOut));
-        var backend = CreateBackend(id);
-        backend.CreateClassProcessor(typeof(TryMakeOutOverloadPrefixPatch)).Patch();
+        var backend = CreateBuilder(id);
+        var owner = GetOrCreatePrelude();
+
+        backend.ScanAndPatch(typeof(TryMakeOutOverloadPrefixPatch));
+        owner.Commit();
 
         try
         {
@@ -56,6 +63,7 @@ public abstract class OverloadArgPayloadBase(bool shouldPass, ILogger logger) : 
         finally
         {
             backend.UnpatchAll();
+            owner.Commit();
         }
     }
 }

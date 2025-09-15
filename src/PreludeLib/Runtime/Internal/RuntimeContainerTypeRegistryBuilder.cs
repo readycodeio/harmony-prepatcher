@@ -2,15 +2,10 @@
 using HarmonyLib;
 using PreludeLib.Runtime.Utils;
 
-namespace PreludeLib.Runtime.Backend.WeaverCallback;
+namespace PreludeLib.Runtime.Internal;
 
-public class PreludeWeaverClassProcessor : IPreludeClassProcessor
+internal readonly struct RuntimeContainerTypeRegistryBuilder
 {
-    private readonly PreludeWeaverBackend _instance;
-    private readonly Type _containerType;
-    private readonly HarmonyMethod _containerAttributes;
-    // private readonly Dictionary<Type, MethodInfo> _auxiliaryMethods;
-
     /*
     private static readonly List<Type> _auxiliaryTypes =
     [
@@ -21,20 +16,20 @@ public class PreludeWeaverClassProcessor : IPreludeClassProcessor
     ];
     */
     
-    private readonly List<AttributePatch> patchMethods;
+    private readonly RuntimeRegistryBuilder _owner;
+    private readonly Type _containerType;
+    private readonly HarmonyMethod _containerAttributes;
+    // private readonly Dictionary<Type, MethodInfo> _auxiliaryMethods;
+    private readonly List<AttributePatch> _patchMethods;
     
-    public string? Category { get; }
-
-    public PreludeWeaverClassProcessor(PreludeWeaverBackend instance, Type type)
+    public RuntimeContainerTypeRegistryBuilder(RuntimeRegistryBuilder owner, Type type)
     {
-        _instance = instance;
+        _owner = owner;
         _containerType = type;
         
         var harmonyAttributes = HarmonyMethodExtensions.GetFromType(type);
         _containerAttributes = HarmonyMethod.Merge(harmonyAttributes);
         _containerAttributes.methodType ??= MethodType.Normal;
-
-        Category = _containerAttributes.category;
 
         /*
         _auxiliaryMethods = [];
@@ -46,8 +41,8 @@ public class PreludeWeaverClassProcessor : IPreludeClassProcessor
         }
         */
 
-        patchMethods = PatchTools.GetPatchMethods(_containerType);
-        foreach (var patchMethod in patchMethods)
+        _patchMethods = PatchTools.GetPatchMethods(_containerType);
+        foreach (var patchMethod in _patchMethods)
         {
             var method = patchMethod.info.method;
             patchMethod.info = _containerAttributes.Merge(patchMethod.info);
@@ -103,7 +98,7 @@ public class PreludeWeaverClassProcessor : IPreludeClassProcessor
         {
             lastOriginal = originals[i];
             var job = jobs.GetJob(lastOriginal);
-            foreach (var patchMethod in patchMethods)
+            foreach (var patchMethod in _patchMethods)
             {
                 var note = "You cannot combine TargetMethod, TargetMethods or [HarmonyPatchAll] with individual annotations";
                 var info = patchMethod.info;
@@ -128,7 +123,7 @@ public class PreludeWeaverClassProcessor : IPreludeClassProcessor
     private List<MethodInfo> PatchWithAttributes(ref MethodBase? lastOriginal)
     {
         var jobs = new PatchJobs<MethodInfo>();
-        foreach (var patchMethod in patchMethods)
+        foreach (var patchMethod in _patchMethods)
         {
             lastOriginal = patchMethod.info.GetOriginalMethod();
             if (lastOriginal is null)
@@ -161,19 +156,19 @@ public class PreludeWeaverClassProcessor : IPreludeClassProcessor
                 {
                     foreach (var prefix in job.prefixes)
                     {
-                        _instance.Patch(job.original, prefix: prefix);
+                        _owner.Patch(job.original, prefix: prefix);
                     }
                     foreach (var postfix in job.postfixes)
                     {
-                        _instance.Patch(job.original, postfix: postfix);
+                        _owner.Patch(job.original, postfix: postfix);
                     }
                     foreach (var transpiler in job.transpilers)
                     {
-                        _instance.Patch(job.original, transpiler: transpiler);
+                        _owner.Patch(job.original, transpiler: transpiler);
                     }
                     foreach (var finalizer in job.finalizers)
                     {
-                        _instance.Patch(job.original, finalizer: finalizer);
+                        _owner.Patch(job.original, finalizer: finalizer);
                     }
                     
                     if (job.innerprefixes.Count > 0)
@@ -191,7 +186,7 @@ public class PreludeWeaverClassProcessor : IPreludeClassProcessor
         // NOTE: Skipped `HarmonyCleanup` feature
         // RunMethod<HarmonyCleanup>(ref exception, job.original, exception);
         // ReportException(exception, job.original);
-        job.replacement = MethodUtils.WrapMethod(job.original);
+        job.replacement = RuntimePreludeMethodUtils.WrapMethod(job.original);
     }
 
     private List<MethodBase> GetBulkMethods()

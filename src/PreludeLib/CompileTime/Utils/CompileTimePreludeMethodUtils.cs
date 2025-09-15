@@ -5,7 +5,7 @@ using PreludeLib.CompileTime.Public;
 
 namespace PreludeLib.CompileTime.Utils;
 
-public static class CompileTimePreludeMethodExtensions
+public static class CompileTimePreludeMethodUtils
 {
     internal static void SetValue(Traverse trv, string name, object? val)
     {

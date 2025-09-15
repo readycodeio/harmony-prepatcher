@@ -10,8 +10,11 @@ public abstract class SpecialInjectionPayloadBase(bool shouldPass, ILogger logge
     public void Injected__instanceProvidesOriginalInstance()
     {
         var id = GenerateId(nameof(Injected__instanceProvidesOriginalInstance));
-        var backend = CreateBackend(id);
-        backend.CreateClassProcessor(typeof(InstanceInjectionPrefixPatch)).Patch();
+        var builder = CreateBuilder(id);
+        var owner = GetOrCreatePrelude();
+        
+        builder.ScanAndPatch(typeof(InstanceInjectionPrefixPatch));
+        owner.Commit();
 
         try
         {
@@ -27,15 +30,19 @@ public abstract class SpecialInjectionPayloadBase(bool shouldPass, ILogger logge
         }
         finally
         {
-            backend.UnpatchAll();
+            builder.UnpatchAll();
+            owner.Commit();
         }
     }
 
     public void Injected__argsArrayCanMutateArgumentsInPlace()
     {
         var id = GenerateId(nameof(Injected__argsArrayCanMutateArgumentsInPlace));
-        var backend = CreateBackend(id);
-        backend.CreateClassProcessor(typeof(ArgsArrayInjectionPrefixPatch)).Patch();
+        var builder = CreateBuilder(id);
+        var owner = GetOrCreatePrelude();
+        
+        builder.ScanAndPatch(typeof(ArgsArrayInjectionPrefixPatch));
+        owner.Commit();
 
         try
         {
@@ -51,15 +58,19 @@ public abstract class SpecialInjectionPayloadBase(bool shouldPass, ILogger logge
         }
         finally
         {
-            backend.UnpatchAll();
+            builder.UnpatchAll();
+            owner.Commit();
         }
     }
 
     public void Injected__originalMethodProvidesMethodBase()
     {
         var id = GenerateId(nameof(Injected__originalMethodProvidesMethodBase));
-        var backend = CreateBackend(id);
-        backend.CreateClassProcessor(typeof(OriginalMethodInjectionPostfixPatch)).Patch();
+        var builder = CreateBuilder(id);
+        var owner = GetOrCreatePrelude();
+        
+        builder.ScanAndPatch(typeof(OriginalMethodInjectionPostfixPatch));
+        owner.Commit();
 
         try
         {
@@ -75,17 +86,21 @@ public abstract class SpecialInjectionPayloadBase(bool shouldPass, ILogger logge
         }
         finally
         {
-            backend.UnpatchAll();
+            builder.UnpatchAll();
+            owner.Commit();
         }
     }
 
     public void HarmonyArgumentAttributeBindsByIndexAndName()
     {
         var id = GenerateId(nameof(HarmonyArgumentAttributeBindsByIndexAndName));
-        var backend = CreateBackend(id);
+        var builder = CreateBuilder(id);
+        var owner = GetOrCreatePrelude();
+        
         // Apply BOTH: prefix (argument binding) + postfix (original method capture)
-        backend.CreateClassProcessor(typeof(HarmonyArgumentBindingPrefixPatch)).Patch();
-        backend.CreateClassProcessor(typeof(OriginalMethodInjectionPostfixPatch)).Patch();
+        builder.ScanAndPatch(typeof(HarmonyArgumentBindingPrefixPatch));
+        builder.ScanAndPatch(typeof(OriginalMethodInjectionPostfixPatch));
+        owner.Commit();
 
         try
         {
@@ -103,7 +118,8 @@ public abstract class SpecialInjectionPayloadBase(bool shouldPass, ILogger logge
         }
         finally
         {
-            backend.UnpatchAll();
+            builder.UnpatchAll();
+            owner.Commit();
         }
     }
 }

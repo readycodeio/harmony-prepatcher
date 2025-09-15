@@ -10,8 +10,11 @@ public abstract class PropertiesPayloadBase(bool shouldPass, ILogger logger) : B
     public void PatchPropertySetterWithMethodTypeSetter()
     {
         var id = GenerateId(nameof(PatchPropertySetterWithMethodTypeSetter));
-        var backend = CreateBackend(id);
-        backend.CreateClassProcessor(typeof(PropertySetterPostfixPatch)).Patch();
+        var builder = CreateBuilder(id);
+        var owner = GetOrCreatePrelude();
+        
+        builder.ScanAndPatch(typeof(PropertySetterPostfixPatch));
+        owner.Commit();
 
         try
         {
@@ -29,15 +32,19 @@ public abstract class PropertiesPayloadBase(bool shouldPass, ILogger logger) : B
         }
         finally
         {
-            backend.UnpatchAll();
+            builder.UnpatchAll();
+            owner.Commit();
         }
     }
 
     public void PrefixOnAutoPropertySetterCanModifyIncomingValue()
     {
         var id = GenerateId(nameof(PrefixOnAutoPropertySetterCanModifyIncomingValue));
-        var harmony = CreateBackend(id);
-        harmony.CreateClassProcessor(typeof(AutoSetterPrefixPatch)).Patch();
+        var builder = CreateBuilder(id);
+        var owner = GetOrCreatePrelude();
+        
+        builder.ScanAndPatch(typeof(AutoSetterPrefixPatch));
+        owner.Commit();
 
         try
         {
@@ -51,7 +58,8 @@ public abstract class PropertiesPayloadBase(bool shouldPass, ILogger logger) : B
         }
         finally
         {
-            harmony.UnpatchAll();
+            builder.UnpatchAll();
+            owner.Commit();
         }
     }
 }

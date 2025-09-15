@@ -10,8 +10,11 @@ public abstract class PrefixPayloadBase(bool shouldPass, ILogger logger) : Backe
     public void PrefixReturningFalseSkipsOriginalAndSetsResult()
     {
         var id = GenerateId(nameof(PrefixReturningFalseSkipsOriginalAndSetsResult));
-        var backend = CreateBackend(id);
-        backend.CreateClassProcessor(typeof(PrefixSkipSetResultPatch)).Patch();
+        var builder = CreateBuilder(id);
+        var owner = GetOrCreatePrelude();
+        
+        builder.ScanAndPatch(typeof(PrefixSkipSetResultPatch));
+        owner.Commit();
 
         try
         {
@@ -21,15 +24,19 @@ public abstract class PrefixPayloadBase(bool shouldPass, ILogger logger) : Backe
         }
         finally
         {
-            backend.UnpatchAll();
+            builder.UnpatchAll();
+            owner.Commit();
         }
     }
 
     public void PrefixCanModifyByRefArguments()
     {
         var id = GenerateId(nameof(PrefixCanModifyByRefArguments));
-        var backend = CreateBackend(id);
-        backend.CreateClassProcessor(typeof(PrefixModifyByRefPatch)).Patch();
+        var builder = CreateBuilder(id);
+        var owner = GetOrCreatePrelude();
+        
+        builder.ScanAndPatch(typeof(PrefixModifyByRefPatch));
+        owner.Commit();
 
         try
         {
@@ -42,15 +49,19 @@ public abstract class PrefixPayloadBase(bool shouldPass, ILogger logger) : Backe
         }
         finally
         {
-            backend.UnpatchAll();
+            builder.UnpatchAll();
+            owner.Commit();
         }
     }
 
     public void PrefixCanSetOutParameterValues()
     {
         var id = GenerateId(nameof(PrefixCanSetOutParameterValues));
-        var backend = CreateBackend(id);
-        backend.CreateClassProcessor(typeof(PrefixSetOutPatch)).Patch();
+        var builder = CreateBuilder(id);
+        var owner = GetOrCreatePrelude();
+        
+        builder.ScanAndPatch(typeof(PrefixSetOutPatch));
+        owner.Commit();
 
         try
         {
@@ -62,15 +73,19 @@ public abstract class PrefixPayloadBase(bool shouldPass, ILogger logger) : Backe
         }
         finally
         {
-            backend.UnpatchAll();
+            builder.UnpatchAll();
+            owner.Commit();
         }
     }
     
     public void PrefixCanUseArgumentIndexAliases__0__1()
     {
         var id = GenerateId(nameof(PrefixCanUseArgumentIndexAliases__0__1));
-        var backend = CreateBackend(id);
-        backend.CreateClassProcessor(typeof(PrefixAliasesPatch)).Patch();
+        var builder = CreateBuilder(id);
+        var owner = GetOrCreatePrelude();
+        
+        builder.ScanAndPatch(typeof(PrefixAliasesPatch));
+        owner.Commit();
 
         try
         {
@@ -82,7 +97,8 @@ public abstract class PrefixPayloadBase(bool shouldPass, ILogger logger) : Backe
         }
         finally
         {
-            backend.UnpatchAll();
+            builder.UnpatchAll();
+            owner.Commit();
         }
     }
 }

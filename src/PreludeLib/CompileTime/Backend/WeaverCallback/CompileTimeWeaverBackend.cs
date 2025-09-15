@@ -2,7 +2,7 @@
 
 namespace PreludeLib.CompileTime.Backend.WeaverCallback;
 
-public class CompileTimeWeaverBackend : ICompileTimePreludeBackend
+public class CompileTimeWeaverBackend : ICompileTimeBackend
 {
     public void Commit(ICompileTimePatchRegistry registry)
     {
