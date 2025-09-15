@@ -7,5 +7,5 @@ namespace PreludeLib.Payload.Prefix;
 public class HarmonyPrefixPayload(ILogger logger) : PrefixPayloadBase(true, logger)
 {
     protected override IRuntimeBackend CreateBackend()
-        => new PreludeHarmonyBackend(Logger);
+        => new RuntimeHarmonyBackend(Logger);
 }

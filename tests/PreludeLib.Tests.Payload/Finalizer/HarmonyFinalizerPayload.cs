@@ -7,5 +7,5 @@ namespace PreludeLib.Payload.Finalizer;
 public class HarmonyFinalizerPayload(ILogger logger) : FinalizerPayloadBase(true, logger)
 {
     protected override IRuntimeBackend CreateBackend()
-        => new PreludeHarmonyBackend(Logger);
+        => new RuntimeHarmonyBackend(Logger);
 }

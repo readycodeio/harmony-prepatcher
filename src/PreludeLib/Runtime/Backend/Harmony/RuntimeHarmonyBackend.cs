@@ -4,7 +4,7 @@ using PreludeLib.Runtime.Registry;
 
 namespace PreludeLib.Runtime.Backend.HarmonyDetour;
 
-public class PreludeHarmonyBackend(ILogger logger) : IRuntimeBackend
+public class RuntimeHarmonyBackend(ILogger logger) : IRuntimeBackend
 {
     private readonly Dictionary<string, Harmony> _harmonyInstances = [];
 

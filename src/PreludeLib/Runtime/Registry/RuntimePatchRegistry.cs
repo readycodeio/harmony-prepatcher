@@ -213,6 +213,8 @@ public class RuntimePatchRegistry : IRuntimePatchRegistry
             return;
         var entry = new OriginalMethodEntry(original);
         _allOriginals.Add(original);
+        _addedOriginals.Add(original);
+        _addedOriginalsSet.Add(original);
         _originalEntries.Add(original, entry);
     }
 
@@ -228,6 +230,7 @@ public class RuntimePatchRegistry : IRuntimePatchRegistry
         if (_ids.Contains(id))
             return;
         _ids.Add(id);
+        _addedIds.Add(id);
     }
 
     public void AddPatchMethod(MethodBase original, string id, HarmonyPatchType patchType, HarmonyMethod patchMethod)
@@ -279,7 +282,7 @@ public class RuntimePatchRegistry : IRuntimePatchRegistry
     public void RemovePatchMethod(MethodBase original, string? id, MethodInfo patchMethod)
         => RemovePatchMethod(original, id, new HarmonyMethod(patchMethod));
     
-    private bool AddPatchMethod(
+    private void AddPatchMethod(
         List<PatchEntry> patches,
         List<PatchEntry> addedPatches,
         List<PatchEntry> removedPatches,
@@ -297,7 +300,7 @@ public class RuntimePatchRegistry : IRuntimePatchRegistry
         }
         
         if (found)
-            return false;
+            throw new ArgumentException($"Patch method {patchEntry.PatchInfo.Description()} already registered for original: {patchEntry.Owner.Original.FullDescription()}");
 
         patches.Add(patchEntry);
         
@@ -315,8 +318,6 @@ public class RuntimePatchRegistry : IRuntimePatchRegistry
         
         if (!added)
             addedPatches.Add(patchEntry);
-
-        return true;
     }
 
     private bool RemovePatchMethod(
@@ -366,5 +367,15 @@ public class RuntimePatchRegistry : IRuntimePatchRegistry
         _addedIds.Clear();
         _addedOriginals.Clear();
         _addedOriginalsSet.Clear();
+
+        foreach (var entry in _originalEntries.Values)
+        {
+            entry.AddedPrefixes.Clear();
+            entry.AddedPostfixes.Clear();
+            entry.AddedFinalizers.Clear();
+            entry.RemovedPrefixes.Clear();
+            entry.RemovedPostfixes.Clear();
+            entry.RemovedFinalizers.Clear();
+        }
     }
 }

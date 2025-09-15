@@ -7,5 +7,5 @@ namespace PreludeLib.Payload.OverloadArg;
 public class HarmonyOverloadArgPayload(ILogger logger) : OverloadArgPayloadBase(true, logger)
 {
     protected override IRuntimeBackend CreateBackend()
-        => new PreludeHarmonyBackend(Logger);
+        => new RuntimeHarmonyBackend(Logger);
 }

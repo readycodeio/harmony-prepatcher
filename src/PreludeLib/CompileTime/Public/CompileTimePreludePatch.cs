@@ -20,7 +20,7 @@ public class CompileTimePreludePatch(HarmonyPatchType patchType, CompileTimePrel
     public readonly HarmonyPatchType PatchType = patchType;
     public CompileTimePreludeMethod PatchMethod = patchMethod;
 
-    public static CompileTimePreludePatch? Create(ModuleDefinition moduleDef, MethodDefinition patchMethodDef)
+    public static CompileTimePreludePatch? Create(MethodDefinition patchMethodDef)
     {
         if (patchMethodDef is null)
             throw new NullReferenceException("Patch method cannot be null");

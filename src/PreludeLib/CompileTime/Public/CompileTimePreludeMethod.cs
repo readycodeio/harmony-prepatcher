@@ -6,7 +6,7 @@ namespace PreludeLib.CompileTime.Public;
 
 public class CompileTimePreludeMethod
 {
-	public MethodReference? Method; // need to be called 'method'
+	public MethodReference? Method;
 	public readonly string? Category = null;
 	public readonly TypeReference? DeclaringType;
 	public readonly string? MethodName;

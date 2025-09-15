@@ -8,5 +8,5 @@ namespace PreludeLib.Payload.Properties;
 public class HarmonyPropertiesPayload(ILogger logger) : PropertiesPayloadBase(true, logger)
 {
     protected override IRuntimeBackend CreateBackend()
-        => new PreludeHarmonyBackend(Logger);
+        => new RuntimeHarmonyBackend(Logger);
 }

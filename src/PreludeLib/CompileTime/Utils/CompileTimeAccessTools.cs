@@ -304,4 +304,39 @@ public static class CompileTimeAccessTools
         }
         return null;
     }
+    
+    public static FieldDefinition? DeclaredField(TypeDefinition? typeDef, string? name)
+    {
+        if (typeDef is null)
+            return null;
+        if (string.IsNullOrEmpty(name))
+            return null;
+        var fieldDef = typeDef.Fields.FirstOrDefault(x => x.Name == name);
+        return fieldDef;
+    }
+    
+    public static FieldDefinition? DeclaredField(TypeDefinition? typeDef, int idx)
+    {
+        if (typeDef is null)
+            return null;
+        var fieldDef = GetDeclaredFields(typeDef).ElementAtOrDefault(idx);
+        return fieldDef;
+    }
+    
+    public static List<FieldDefinition> GetDeclaredFields(TypeDefinition? type)
+    {
+        if (type is null)
+            return [];
+        return [.. type.Fields];
+    }
+    
+    public static FieldDefinition? Field(TypeDefinition? typeDef, string? name)
+    {
+        if (typeDef is null)
+            return null;
+        if (string.IsNullOrEmpty(name))
+            return null;
+        var fieldDef = FindIncludingBaseTypes(typeDef, t => t.Fields.FirstOrDefault(x => x.Name == name));
+        return fieldDef;
+    }
 }

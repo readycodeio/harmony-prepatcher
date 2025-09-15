@@ -7,5 +7,5 @@ namespace PreludeLib.Payload.Ordering;
 public class HarmonyOrderingPayload(ILogger logger) : OrderingPayloadBase(true, logger)
 {
     protected override IRuntimeBackend CreateBackend()
-        => new PreludeHarmonyBackend(Logger);
+        => new RuntimeHarmonyBackend(Logger);
 }

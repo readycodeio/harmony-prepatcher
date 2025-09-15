@@ -8,6 +8,9 @@ namespace PreludeLib.CompileTime.Registry;
 public interface ICompileTimePatchRegistry
 {
     IEnumerable<MethodDefinition> GetOriginalMethods();
+    IEnumerable<MethodDefinition> GetAddedOriginalMethods();
+    bool HasOriginalMethod(MethodDefinition originalDef);
+    bool HasAddedOriginalMethod(MethodDefinition originalDef);
     
     IEnumerable<CompileTimePreludeMethod> GetPatchMethods(MethodDefinition originalDef, HarmonyPatchType patchType);
     IEnumerable<CompileTimePreludeMethod> GetPrefixMethods(MethodDefinition originalDef);
@@ -24,10 +27,18 @@ public interface ICompileTimePatchRegistry
     IEnumerable<CompileTimePreludeMethod> GetUncategorizedPostfixMethods(MethodDefinition originalDef);
     IEnumerable<CompileTimePreludeMethod> GetUncategorizedFinalizerMethods(MethodDefinition originalDef);
     
+    IEnumerable<CompileTimePreludeMethod> GetAddedPatchMethods(MethodDefinition originalDef, HarmonyPatchType patchType);
+    IEnumerable<CompileTimePreludeMethod> GetAddedPrefixMethods(MethodDefinition originalDef);
+    IEnumerable<CompileTimePreludeMethod> GetAddedPostfixMethods(MethodDefinition originalDef);
+    IEnumerable<CompileTimePreludeMethod> GetAddedFinalizerMethods(MethodDefinition originalDef);
+    bool HasAddedPatchMethod(MethodDefinition originalDef , HarmonyPatchType patchType);
+    
     void AddOriginalMethod(MethodReference originalRef);
     void AddOriginalMethod(MethodDefinition originalDef);
     void AddPatchMethod(MethodReference originalRef, HarmonyPatchType patchType, CompileTimePreludeMethod patchMethod);
     void AddPatchMethod(MethodDefinition originalDef, HarmonyPatchType patchType, CompileTimePreludeMethod patchMethod);
     void AddPatchMethod(MethodReference originalRef, CompileTimePreludePatch patchInfo);
     void AddPatchMethod(MethodDefinition originalDef, CompileTimePreludePatch patchInfo);
+
+    public void ResetChanges();
 }

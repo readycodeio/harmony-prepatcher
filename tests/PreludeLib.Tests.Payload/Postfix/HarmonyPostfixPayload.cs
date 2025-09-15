@@ -7,5 +7,5 @@ namespace PreludeLib.Payload.Postfix;
 public class HarmonyPostfixPayload(ILogger logger) : PostfixPayloadBase(true, logger)
 {
     protected override IRuntimeBackend CreateBackend()
-        => new PreludeHarmonyBackend(Logger);
+        => new RuntimeHarmonyBackend(Logger);
 }

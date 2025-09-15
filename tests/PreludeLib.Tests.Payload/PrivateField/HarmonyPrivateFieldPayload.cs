@@ -7,5 +7,5 @@ namespace PreludeLib.Payload.PrivateField;
 public class HarmonyPrivateFieldPayload(ILogger logger) : PrivateFieldPayloadBase(true, logger)
 {
     protected override IRuntimeBackend CreateBackend()
-        => new PreludeHarmonyBackend(Logger);
+        => new RuntimeHarmonyBackend(Logger);
 }

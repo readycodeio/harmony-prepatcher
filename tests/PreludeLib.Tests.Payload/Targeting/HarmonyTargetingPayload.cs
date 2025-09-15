@@ -7,5 +7,5 @@ namespace PreludeLib.Payload.Targeting;
 public class HarmonyTargetingPayload(ILogger logger) : TargetingPayloadBase(true, logger)
 {
     protected override IRuntimeBackend CreateBackend()
-        => new PreludeHarmonyBackend(Logger);
+        => new RuntimeHarmonyBackend(Logger);
 }

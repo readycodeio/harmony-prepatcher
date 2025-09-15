@@ -7,5 +7,5 @@ namespace PreludeLib.Payload.SpecialInjection;
 public class HarmonySpecialInjectionPayload(ILogger logger) : SpecialInjectionPayloadBase(true, logger)
 {
     protected override IRuntimeBackend CreateBackend()
-        => new PreludeHarmonyBackend(Logger);
+        => new RuntimeHarmonyBackend(Logger);
 }

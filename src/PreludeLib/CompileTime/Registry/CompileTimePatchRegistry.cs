@@ -21,28 +21,44 @@ public class CompileTimePatchRegistry : ICompileTimePatchRegistry
         public readonly List<PatchEntry> Prefixes = [];
         public readonly List<PatchEntry> Postfixes = [];
         public readonly List<PatchEntry> Finalizers = [];
+        public readonly List<PatchEntry> AddedPrefixes = [];
+        public readonly List<PatchEntry> AddedPostfixes = [];
+        public readonly List<PatchEntry> AddedFinalizers = [];
     }
     
     private readonly List<MethodDefinition> _allOriginals = new();
+    private readonly List<MethodDefinition> _addedOriginals = new();
+    private readonly HashSet<MethodDefinition> _addedOriginalsSet = new();
     private readonly Dictionary<MethodDefinition, OriginalMethodEntry> _originalEntries = new();
 
     public IEnumerable<MethodDefinition> GetOriginalMethods()
         => _allOriginals;
 
+    public IEnumerable<MethodDefinition> GetAddedOriginalMethods()
+        => _addedOriginals;
+
+    public bool HasOriginalMethod(MethodDefinition originalDef)
+        => _originalEntries.ContainsKey(originalDef);
+
+    public bool HasAddedOriginalMethod(MethodDefinition originalDef)
+        => _addedOriginalsSet.Contains(originalDef);
+
     public IEnumerable<CompileTimePreludeMethod> GetPatchMethods(MethodDefinition originalDef, HarmonyPatchType patchType)
     {
         EnsureOriginalMethodEntry(originalDef, out var entry);
-        return patchType switch
+        var entries = patchType switch
         {
-            HarmonyPatchType.All => entry.Prefixes.Select(p => p.PatchInfo)
-                .Concat(entry.Postfixes.Select(p => p.PatchInfo))
-                .Concat(entry.Finalizers.Select(p => p.PatchInfo)),
-            HarmonyPatchType.Prefix => entry.Prefixes.Select(p => p.PatchInfo),
-            HarmonyPatchType.Postfix => entry.Postfixes.Select(p => p.PatchInfo),
-            HarmonyPatchType.Finalizer => entry.Finalizers.Select(p => p.PatchInfo),
+            HarmonyPatchType.All => entry.Prefixes
+                .Concat(entry.Postfixes)
+                .Concat(entry.Finalizers),
+            HarmonyPatchType.Prefix => entry.Prefixes,
+            HarmonyPatchType.Postfix => entry.Postfixes,
+            HarmonyPatchType.Finalizer => entry.Finalizers,
             HarmonyPatchType.Transpiler => [],
             _ => throw new ArgumentOutOfRangeException(nameof(patchType), patchType, null)
         };
+        
+        return entries.Select(x => x.PatchInfo);
     }
 
     public IEnumerable<CompileTimePreludeMethod> GetPrefixMethods(MethodDefinition originalDef)
@@ -78,6 +94,48 @@ public class CompileTimePatchRegistry : ICompileTimePatchRegistry
     public IEnumerable<CompileTimePreludeMethod> GetUncategorizedFinalizerMethods(MethodDefinition originalDef)
         => GetCategoryFinalizerMethods(originalDef, Category.Uncategorized);
 
+    public IEnumerable<CompileTimePreludeMethod> GetAddedPatchMethods(MethodDefinition originalDef, HarmonyPatchType patchType)
+    {
+        EnsureOriginalMethodEntry(originalDef, out var entry);
+        var entries = patchType switch
+        {
+            HarmonyPatchType.All => entry.AddedPrefixes
+                .Concat(entry.AddedPostfixes)
+                .Concat(entry.AddedFinalizers),
+            HarmonyPatchType.Prefix => entry.AddedPrefixes,
+            HarmonyPatchType.Postfix => entry.AddedPostfixes,
+            HarmonyPatchType.Finalizer => entry.AddedFinalizers,
+            HarmonyPatchType.Transpiler => [],
+            _ => throw new ArgumentOutOfRangeException(nameof(patchType), patchType, null)
+        };
+        
+        return entries.Select(x => x.PatchInfo);
+    }
+
+    public IEnumerable<CompileTimePreludeMethod> GetAddedPrefixMethods(MethodDefinition originalDef)
+        => GetAddedPatchMethods(originalDef, HarmonyPatchType.Prefix);
+
+    public IEnumerable<CompileTimePreludeMethod> GetAddedPostfixMethods(MethodDefinition originalDef)
+        => GetAddedPatchMethods(originalDef, HarmonyPatchType.Postfix);
+
+    public IEnumerable<CompileTimePreludeMethod> GetAddedFinalizerMethods(MethodDefinition originalDef)
+        => GetAddedPatchMethods(originalDef, HarmonyPatchType.Finalizer);
+
+    public bool HasAddedPatchMethod(MethodDefinition originalDef, HarmonyPatchType patchType)
+    {
+        EnsureOriginalMethodEntry(originalDef, out var entry);
+        return patchType switch
+        {
+            HarmonyPatchType.All => entry.AddedPrefixes.Any() ||
+                                    entry.AddedPostfixes.Any() ||
+                                    entry.AddedFinalizers.Any(),
+            HarmonyPatchType.Prefix => entry.AddedPrefixes.Any(),
+            HarmonyPatchType.Postfix => entry.AddedPostfixes.Any(),
+            HarmonyPatchType.Finalizer => entry.AddedFinalizers.Any(),
+            _ => false,
+        };
+    }
+
     public void AddOriginalMethod(MethodReference originalRef)
     {
         var resolved = originalRef.Resolve();
@@ -92,6 +150,8 @@ public class CompileTimePatchRegistry : ICompileTimePatchRegistry
             return;
         var entry = new OriginalMethodEntry(originalDef);
         _allOriginals.Add(originalDef);
+        _addedOriginals.Add(originalDef);
+        _addedOriginalsSet.Add(originalDef);
         _originalEntries.Add(originalDef, entry);
     }
     
@@ -116,11 +176,11 @@ public class CompileTimePatchRegistry : ICompileTimePatchRegistry
         
         var patchEntry = new PatchEntry(originalEntry, patchType, patchMethod);
         if (patchType == HarmonyPatchType.All || patchType == HarmonyPatchType.Prefix)
-            originalEntry.Prefixes.Add(patchEntry);
+            AddPatchMethod(originalEntry.Prefixes, originalEntry.AddedPrefixes, patchEntry);
         if (patchType == HarmonyPatchType.All || patchType == HarmonyPatchType.Postfix)
-            originalEntry.Postfixes.Add(patchEntry);
+            AddPatchMethod(originalEntry.Postfixes, originalEntry.AddedPostfixes, patchEntry);
         if (patchType == HarmonyPatchType.All || patchType == HarmonyPatchType.Finalizer)
-            originalEntry.Finalizers.Add(patchEntry);
+            AddPatchMethod(originalEntry.Finalizers, originalEntry.Finalizers, patchEntry);
         if (patchType == HarmonyPatchType.Transpiler)
             throw new NotSupportedException("Transpilers are not supported in CompileTimePatchRegistry");
     }
@@ -133,5 +193,38 @@ public class CompileTimePatchRegistry : ICompileTimePatchRegistry
     public void AddPatchMethod(MethodDefinition originalDef, CompileTimePreludePatch patchInfo)
     {
         AddPatchMethod(originalDef, patchInfo.PatchType, patchInfo.PatchMethod);
+    }
+    
+    private void AddPatchMethod(List<PatchEntry> patches, List<PatchEntry> addedPatches, PatchEntry patchEntry)
+    {
+        var found = false;
+        for (var i = 0; i < patches.Count; i++)
+        {
+            var patchItem = patches[i];
+            if (patchItem.PatchInfo.Method == patchEntry.PatchInfo.Method)
+            {
+                found = true;
+                break;
+            }
+        }
+        
+        if (found)
+            throw new ArgumentException($"Patch method already registered: {patchEntry.PatchInfo.Method.FullDescription()}");
+
+        patches.Add(patchEntry);
+        addedPatches.Add(patchEntry);
+    }
+
+    public void ResetChanges()
+    {
+        _addedOriginals.Clear();
+        _addedOriginalsSet.Clear();
+        
+        foreach (var entry in _originalEntries.Values)
+        {
+            entry.AddedPrefixes.Clear();
+            entry.AddedPostfixes.Clear();
+            entry.AddedFinalizers.Clear();
+        }
     }
 }

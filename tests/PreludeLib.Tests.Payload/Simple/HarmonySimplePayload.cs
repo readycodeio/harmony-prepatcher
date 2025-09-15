@@ -7,5 +7,5 @@ namespace PreludeLib.Payload.Simple;
 public class HarmonySimplePayload(ILogger logger) : SimplePayloadBase(true, logger)
 {
     protected override IRuntimeBackend CreateBackend()
-        => new PreludeHarmonyBackend(Logger);
+        => new RuntimeHarmonyBackend(Logger);
 }

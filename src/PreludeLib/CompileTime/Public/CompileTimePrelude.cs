@@ -59,5 +59,8 @@ public class CompileTimePrelude : ICompileTimeRegistryBuilder
         => _builder.PatchFinalizer(originalDef, prefix);
 
     public void Commit()
-        => _backend.Commit(_registry);
+    {
+        _backend.Commit(_registry);
+        _registry.ResetChanges();
+    }
 }
