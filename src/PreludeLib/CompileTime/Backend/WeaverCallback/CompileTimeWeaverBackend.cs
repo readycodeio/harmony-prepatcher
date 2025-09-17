@@ -13,6 +13,7 @@ using static PreludeLib.CompileTime.Utils.CompileTimePreludeCecilUtils;
 using EventAttributes = Mono.Cecil.EventAttributes;
 using FieldAttributes = Mono.Cecil.FieldAttributes;
 using MethodAttributes = Mono.Cecil.MethodAttributes;
+using MethodBody = Mono.Cecil.Cil.MethodBody;
 using MethodImplAttributes = Mono.Cecil.MethodImplAttributes;
 using ParameterAttributes = Mono.Cecil.ParameterAttributes;
 using TypeAttributes = Mono.Cecil.TypeAttributes;
@@ -220,90 +221,83 @@ public class CompileTimeWeaverBackend(ILogger logger) : ICompileTimeBackend
             sortedFinalizers.ToList()
         );
     }
+
+    private struct OriginalMethod(MethodDefinition methodDef)
+    {
+	    public readonly MethodDefinition MethodDef = methodDef;
+	    public readonly Dictionary<CompileTimePreludeMethod, List<InjectedParameter>> Injections = [];
+	    public readonly Dictionary<InjectionType, VariableDefinition> InjectedLocals = [];
+	    public readonly Dictionary<string, VariableDefinition> OtherLocals = [];
+	    public VariableDefinition? ExceptionVariable;
+	    public VariableDefinition? RunOriginalVariable;
+	    public VariableDefinition? FinalizedVariable;
+	    public VariableDefinition? ResultVariable;
+    }
     
     private void PatchMethod(MethodDefinition originalDef,
 	    List<CompileTimePreludeMethod> prefixes,
 	    List<CompileTimePreludeMethod> postfixes,
 	    List<CompileTimePreludeMethod> finalizers)
     {
+	    var original = new OriginalMethod(originalDef);
+	    
 	    var body = originalDef.Body;
 	    body.SimplifyMacros();
 	    body.InitLocals = true;
 
-	    var il = body.GetILProcessor();
-	    var excHelper = new CecilExceptionHelper(il);
+	    var flow = new CecilFlowHelper();
+
 	    var module = originalDef.Module;
 	    var ts = module.TypeSystem;
 
-	    HashSet<TypeReference> primitivesWithObjectTypeCode = [ts.IntPtr, ts.UIntPtr];
-	    var dateTimeType = module.ImportReference(typeof(DateTime));
-	    var decimalType = module.ImportReference(typeof(decimal));
-	    var emptyType = module.ImportReference(typeof(void));
-	    var dbNullType = module.ImportReference(typeof(DBNull));
-
-		var getMethodFromHandle1 = module.ImportReference(typeof(MethodBase).GetMethod("GetMethodFromHandle", [typeof(RuntimeMethodHandle)])!);
-		var getMethodFromHandle2 = module.ImportReference(typeof(MethodBase).GetMethod("GetMethodFromHandle", [typeof(RuntimeMethodHandle), typeof(RuntimeTypeHandle)])!);
-
 	    var fixes = prefixes.Concat(postfixes).Concat(finalizers).ToList();
-	    var injections = fixes.ToDictionary(
+	    original.Injections.AddRange(fixes.ToDictionary(
 		    fix => fix,
 		    fix => fix.Method!.Parameters.Select(p => new InjectedParameter(fix.Method.Resolve(), p)).ToList()
-	    );
-
-	    VariableDefinition? resultVariable = null;
-
-	    var instructions = new List<Instruction>();
-	    Dictionary<InjectionType, VariableDefinition> injectedLocals = [];
-	    Dictionary<string, VariableDefinition> otherLocals = [];
-
-	    Dictionary<Instruction, List<Instruction>> labels = [];
-	    Dictionary<Instruction, List<CompileTimeExceptionBlock>> blocks = [];
-
-	    List<(Instruction TryStart, Instruction? TryEnd, List<ExceptionHandler> Handlers)> chains = [];
+	    ));
 
 	    if (fixes.Any() && !EqualTypeRef(originalDef.ReturnType, ts.Void))
 	    {
-		    resultVariable = new VariableDefinition(originalDef.ReturnType);
-		    body.Variables.Add(resultVariable);
-		    injectedLocals.Add(InjectionType.Result, resultVariable);
-		    instructions.AddRange(GenerateVariableInit(resultVariable, true));
+		    original.ResultVariable = new VariableDefinition(originalDef.ReturnType);
+		    body.Variables.Add(original.ResultVariable);
+		    original.InjectedLocals.Add(InjectionType.Result, original.ResultVariable);
+		    flow.AppendAll(GenerateVariableInit(original.ResultVariable, true, module));
 	    }
 
-	    if (AnyFixHas(InjectionType.ResultRef))
+	    if (AnyFixHas(original, InjectionType.ResultRef))
 	    {
 		    if (originalDef.ReturnType.IsByReference)
 		    {
 			    var varType = module.ImportReference(typeof(RefResult<>)).MakeGenericInstanceType(originalDef.ReturnType.GetElementType());
 			    var resultRefVariable = new VariableDefinition(varType);
 			    body.Variables.Add(resultRefVariable);
-			    injectedLocals.Add(InjectionType.ResultRef, resultRefVariable);
-			    instructions.Add(Instruction.Create(OpCodes.Ldnull));
-			    instructions.Add(Instruction.Create(OpCodes.Stloc, resultRefVariable));
+			    original.InjectedLocals.Add(InjectionType.ResultRef, resultRefVariable);
+			    flow.Append(Instruction.Create(OpCodes.Ldnull));
+			    flow.Append(Instruction.Create(OpCodes.Stloc, resultRefVariable));
 		    }
 	    }
 
-	    if (AnyFixHas(InjectionType.ArgsArray))
+	    if (AnyFixHas(original, InjectionType.ArgsArray))
 	    {
 		    var argsArrayVariable = new VariableDefinition(module.ImportReference(typeof(object[])));
 		    body.Variables.Add(argsArrayVariable);
-		    injectedLocals.Add(InjectionType.ArgsArray, argsArrayVariable);
-		    instructions.AddRange(PrepareArgumentArray());
-		    instructions.Add(Instruction.Create(OpCodes.Stloc, argsArrayVariable));
+		    original.InjectedLocals.Add(InjectionType.ArgsArray, argsArrayVariable);
+		    flow.AppendAll(PrepareArgumentArray(originalDef));
+		    flow.Append(Instruction.Create(OpCodes.Stloc, argsArrayVariable));
 	    }
 
-	    Instruction? skipOriginalLabel = null;
-	    VariableDefinition? runOriginalVariable = null;
+	    CecilLabel? skipOriginalLabel = null;
 
-	    var prefixAffectsOriginal = prefixes.Any(AffectsOriginal);
-	    var anyFixHasRunOriginal = AnyFixHas(InjectionType.RunOriginal);
+	    var prefixAffectsOriginal = prefixes.Any(fix => AffectsOriginal(original, fix));
+	    var anyFixHasRunOriginal = AnyFixHas(original, InjectionType.RunOriginal);
 	    if (prefixAffectsOriginal || anyFixHasRunOriginal)
 	    {
-		    runOriginalVariable = new VariableDefinition(module.ImportReference(typeof(bool)));
-		    body.Variables.Add(runOriginalVariable);
-		    instructions.Add(Instruction.Create(OpCodes.Ldc_I4_1));
-		    instructions.Add(Instruction.Create(OpCodes.Stloc, runOriginalVariable));
+		    original.RunOriginalVariable = new VariableDefinition(module.ImportReference(typeof(bool)));
+		    body.Variables.Add(original.RunOriginalVariable);
+		    flow.Append(Instruction.Create(OpCodes.Ldc_I4_1));
+		    flow.Append(Instruction.Create(OpCodes.Stloc, original.RunOriginalVariable));
 		    if (prefixAffectsOriginal)
-			    skipOriginalLabel = Instruction.Create(OpCodes.Nop);
+			    skipOriginalLabel = flow.DefineLabel();
 	    }
 
 	    fixes.ForEach(fix =>
@@ -312,8 +306,8 @@ public class CompileTimeWeaverBackend(ILogger logger) : ICompileTimeBackend
 		    if (declaringType is null)
 			    return;
 		    var varName = $"state__{declaringType.FullName}";
-		    _ = otherLocals.TryGetValue(varName, out var maybeLocal);
-		    foreach (var injection in InjectionsFor(fix, InjectionType.State))
+		    _ = original.OtherLocals.TryGetValue(varName, out var maybeLocal);
+		    foreach (var injection in InjectionsFor(original, fix, InjectionType.State))
 		    {
 			    var parameterType = injection.ParameterDef.ParameterType;
 			    var type = parameterType.IsByReference ? parameterType.GetElementType() : parameterType;
@@ -321,1544 +315,1565 @@ public class CompileTimeWeaverBackend(ILogger logger) : ICompileTimeBackend
 				    continue;
 			    var privateStateVariable = new VariableDefinition(type);
 			    body.Variables.Add(privateStateVariable);
-			    otherLocals.Add(varName, privateStateVariable);
-			    instructions.AddRange(GenerateVariableInit(privateStateVariable));
+			    original.OtherLocals.Add(varName, privateStateVariable);
+			    flow.AppendAll(GenerateVariableInit(privateStateVariable, false, module));
 		    }
 	    });
 
-	    VariableDefinition? finalizedVariable = null;
-	    VariableDefinition? exceptionVariable = null;
 	    if (finalizers.Count > 0)
 	    {
-		    finalizedVariable = new VariableDefinition(module.ImportReference(typeof(bool)));
-		    body.Variables.Add(finalizedVariable);
-		    instructions.AddRange(GenerateVariableInit(finalizedVariable));
-		    exceptionVariable = new VariableDefinition(module.ImportReference(typeof(Exception)));
-		    body.Variables.Add(exceptionVariable);
-		    injectedLocals.Add(InjectionType.Exception, exceptionVariable);
-		    instructions.AddRange(GenerateVariableInit(exceptionVariable));
+		    original.FinalizedVariable = new VariableDefinition(module.ImportReference(typeof(bool)));
+		    body.Variables.Add(original.FinalizedVariable);
+		    flow.AppendAll(GenerateVariableInit(original.FinalizedVariable, false, module));
+		    original.ExceptionVariable = new VariableDefinition(module.ImportReference(typeof(Exception)));
+		    body.Variables.Add(original.ExceptionVariable);
+		    original.InjectedLocals.Add(InjectionType.Exception, original.ExceptionVariable);
+		    flow.AppendAll(GenerateVariableInit(original.ExceptionVariable, false, module));
 		    // begin try
-		    instructions.Add(MarkBlock(ExceptionBlockType.BeginExceptionBlock));
+		    flow.Append(MarkBlock(flow, ExceptionBlockType.BeginExceptionBlock, module));
 	    }
 
-	    AddPrefixes();
+	    AddPrefixes(flow, original, prefixes);
 	    if (skipOriginalLabel != null)
 	    {
-		    instructions.Add(Instruction.Create(OpCodes.Ldloc, runOriginalVariable));
-		    instructions.Add(Instruction.Create(OpCodes.Brfalse, skipOriginalLabel));
+		    flow.Append(Instruction.Create(OpCodes.Ldloc, original.RunOriginalVariable));
+		    flow.Append(Instruction.Create(OpCodes.Brfalse, skipOriginalLabel.Value.Instruction));
 	    }
 
-	    var endLabels = new List<Instruction>();
-	    var replacement = MethodCopier(true, out var hasReturnCode, out var methodEndsInDeadCode, endLabels);
+	    var endLabels = new List<CecilLabel>();
+	    var replacement = MethodCopier(body, true, out var hasReturnCode, out var methodEndsInDeadCode, endLabels);
 
-	    instructions.AddRange(CleanupCodes(replacement, endLabels));
+	    CleanupCodes(replacement, endLabels);
+	    flow.AppendFlow(replacement);
 
 	    if (endLabels.Count > 0)
-		    instructions.Add(NopWithLabelList(endLabels));
-	    if (resultVariable is not null && hasReturnCode)
-		    instructions.Add(Instruction.Create(OpCodes.Stloc, resultVariable));
+		    flow.Append(NopWithLabels(flow, endLabels));
+	    if (original.ResultVariable is not null && hasReturnCode)
+		    flow.Append(Instruction.Create(OpCodes.Stloc, original.ResultVariable));
 	    if (skipOriginalLabel != null)
-		    instructions.Add(NopWithLabels(skipOriginalLabel));
+		    flow.Append(NopWithLabels(flow, skipOriginalLabel.Value));
 
-	    _ = AddPostfixes(false);
-	    if (resultVariable is not null && (hasReturnCode || (methodEndsInDeadCode && skipOriginalLabel != null)))
-		    instructions.Add(Instruction.Create(OpCodes.Ldloc, resultVariable));
+	    _ = AddPostfixes(flow, false, original, postfixes);
+	    if (original.ResultVariable is not null && (hasReturnCode || (methodEndsInDeadCode && skipOriginalLabel != null)))
+		    flow.Append(Instruction.Create(OpCodes.Ldloc, original.ResultVariable));
 
-	    var needsToStorePassthroughResult = AddPostfixes(true);
+	    var needsToStorePassthroughResult = AddPostfixes(flow, true, original, postfixes);
 
 	    if (finalizers.Count > 0)
 	    {
-		    exceptionVariable = injectedLocals[InjectionType.Exception];
+		    original.ExceptionVariable = original.InjectedLocals[InjectionType.Exception];
 
 		    if (needsToStorePassthroughResult)
 		    {
-			    instructions.Add(Instruction.Create(OpCodes.Stloc, resultVariable));
-			    instructions.Add(Instruction.Create(OpCodes.Ldloc, resultVariable));
+			    flow.Append(Instruction.Create(OpCodes.Stloc, original.ResultVariable));
+			    flow.Append(Instruction.Create(OpCodes.Ldloc, original.ResultVariable));
 		    }
 
-		    _ = AddFinalizers(false);
-		    instructions.Add(Instruction.Create(OpCodes.Ldc_I4_1));
-		    instructions.Add(Instruction.Create(OpCodes.Stloc, finalizedVariable));
-		    var noExceptionLabel1 = Instruction.Create(OpCodes.Nop);
-		    instructions.Add(Instruction.Create(OpCodes.Ldloc, exceptionVariable));
-		    instructions.Add(Instruction.Create(OpCodes.Brfalse, noExceptionLabel1));
-		    instructions.Add(Instruction.Create(OpCodes.Ldloc, exceptionVariable));
-		    instructions.Add(Instruction.Create(OpCodes.Throw));
-		    instructions.Add(NopWithLabels(noExceptionLabel1));
+		    _ = AddFinalizers(flow, false, original, finalizers);
+		    flow.Append(Instruction.Create(OpCodes.Ldc_I4_1));
+		    flow.Append(Instruction.Create(OpCodes.Stloc, original.FinalizedVariable));
+		    var noExceptionLabel1 = flow.DefineLabel();
+		    flow.Append(Instruction.Create(OpCodes.Ldloc, original.ExceptionVariable));
+		    flow.Append(Instruction.Create(OpCodes.Brfalse, noExceptionLabel1.Instruction));
+		    flow.Append(Instruction.Create(OpCodes.Ldloc, original.ExceptionVariable));
+		    flow.Append(Instruction.Create(OpCodes.Throw));
+		    flow.Append(NopWithLabels(flow, noExceptionLabel1));
 
 		    // end try, begin catch
-		    instructions.Add(MarkBlock(ExceptionBlockType.BeginCatchBlock));
-		    instructions.Add(Instruction.Create(OpCodes.Stloc, exceptionVariable));
+		    flow.Append(MarkBlock(flow, ExceptionBlockType.BeginCatchBlock, module));
+		    flow.Append(Instruction.Create(OpCodes.Stloc, original.ExceptionVariable));
 
-		    instructions.Add(Instruction.Create(OpCodes.Ldloc, finalizedVariable));
-		    var endFinalizerLabel = Instruction.Create(OpCodes.Nop);
-		    instructions.Add(Instruction.Create(OpCodes.Brtrue, endFinalizerLabel));
+		    flow.Append(Instruction.Create(OpCodes.Ldloc, original.FinalizedVariable));
+		    var endFinalizerLabel = flow.DefineLabel();
+		    flow.Append(Instruction.Create(OpCodes.Brtrue, endFinalizerLabel.Instruction));
 
-		    var rethrowPossible = AddFinalizers(true);
+		    var rethrowPossible = AddFinalizers(flow, true, original, finalizers);
 
-		    instructions.Add(NopWithLabels(endFinalizerLabel));
+		    flow.Append(NopWithLabels(flow, endFinalizerLabel));
 
-		    var noExceptionLabel2 = Instruction.Create(OpCodes.Nop);
-		    instructions.Add(Instruction.Create(OpCodes.Ldloc, exceptionVariable));
-		    instructions.Add(Instruction.Create(OpCodes.Brfalse, noExceptionLabel2));
+		    var noExceptionLabel2 = flow.DefineLabel();
+		    flow.Append(Instruction.Create(OpCodes.Ldloc, original.ExceptionVariable));
+		    flow.Append(Instruction.Create(OpCodes.Brfalse, noExceptionLabel2.Instruction));
 		    if (rethrowPossible)
-			    instructions.Add(Instruction.Create(OpCodes.Rethrow));
+			    flow.Append(Instruction.Create(OpCodes.Rethrow));
 		    else
 		    {
-			    instructions.Add(Instruction.Create(OpCodes.Ldloc, exceptionVariable));
-			    instructions.Add(Instruction.Create(OpCodes.Throw));
+			    flow.Append(Instruction.Create(OpCodes.Ldloc, original.ExceptionVariable));
+			    flow.Append(Instruction.Create(OpCodes.Throw));
 		    }
-		    instructions.Add(NopWithLabels(noExceptionLabel2));
+		    flow.Append(NopWithLabels(flow, noExceptionLabel2));
 
 		    // end catch
-		    instructions.Add(MarkBlock(ExceptionBlockType.EndExceptionBlock));
+		    flow.Append(MarkBlock(flow, ExceptionBlockType.EndExceptionBlock, module));
 
-		    if (resultVariable is not null)
-			    instructions.Add(Instruction.Create(OpCodes.Ldloc, resultVariable));
+		    if (original.ResultVariable is not null)
+			    flow.Append(Instruction.Create(OpCodes.Ldloc, original.ResultVariable));
 	    }
 
 	    if (methodEndsInDeadCode == false || skipOriginalLabel is not null || finalizers.Count > 0 || postfixes.Count > 0)
-		    instructions.Add(Instruction.Create(OpCodes.Ret));
+		    flow.Append(Instruction.Create(OpCodes.Ret));
 
-	    instructions = FaultRewrite(instructions);
+	    flow = FaultRewrite(flow, module);
 
-	    EmitCodes(instructions);
+	    var il = body.GetILProcessor();
+
+	    EmitCodes(il, flow);
 
 	    logger.LogDebug("Patching: {Original} ==================", originalDef);
 	    foreach (var instr in body.Instructions)
 	    {
 		    logger.LogDebug(instr.ToString());
 	    }
-	    
-	    return;
+    }
+    
+    #region Method copier
 
-	    // ---
-	    
-	    #region Method copier
-
-	    List<Instruction> MethodCopier(bool stripLastReturn, out bool outHasReturnCode, out bool outMethodEndsInDeadCode, List<Instruction> outEndLabels)
+    private CecilFlowHelper MethodCopier(MethodBody body, bool stripLastReturn, out bool hasReturnCode, out bool methodEndsInDeadCode, List<CecilLabel> outEndLabels)
+    {
+	    var outFlow = new CecilFlowHelper();
+	    ParseExceptions(outFlow, body);
+	    CopierFinalize(outFlow, body, stripLastReturn, out hasReturnCode, out methodEndsInDeadCode, outEndLabels);
+		return outFlow;
+    }
+    
+    private void ParseExceptions(CecilFlowHelper outFlow, MethodBody body)
+    {
+	    foreach (var exception in body.ExceptionHandlers)
 	    {
-		    ParseExceptions();
-		    return CopierFinalize(stripLastReturn, out outHasReturnCode, out outMethodEndsInDeadCode, outEndLabels);
-	    }
-	    
-	    void ParseExceptions()
-	    {
-		    foreach (var exception in body.ExceptionHandlers)
-		    {
-			    var try_start = exception.TryStart;
-			    // var try_end = exception.TryOffset + exception.TryLength - 1;
+		    outFlow.AddBlock(exception.TryStart, new CecilExceptionBlock(ExceptionBlockType.BeginExceptionBlock));
+		    outFlow.AddBlock(exception.HandlerEnd, new CecilExceptionBlock(ExceptionBlockType.EndExceptionBlock));
 
-			    var handler_start = exception.HandlerStart;
-			    var handler_end = exception.HandlerEnd;
-
-			    var instr1 = try_start;
-			    if (!blocks.TryGetValue(instr1, out var instr1Blocks))
-			    {
-				    instr1Blocks = [];
-				    blocks.Add(instr1, instr1Blocks);
-			    }
-			    
-			    instr1Blocks.Add(new CompileTimeExceptionBlock(ExceptionBlockType.BeginExceptionBlock));
-
-			    var instr2 = handler_end;
-			    if (!blocks.TryGetValue(instr2, out var instr2Blocks))
-			    {
-				    instr2Blocks = [];
-				    blocks.Add(instr2, instr2Blocks);
-			    }
-			    instr2Blocks.Add(new CompileTimeExceptionBlock(ExceptionBlockType.EndExceptionBlock));
-
-			    // The FilterOffset property is meaningful only for Filter clauses.
-			    // The CatchType property is not meaningful for Filter or Finally clauses.
-			    //
-			    switch (exception.HandlerType)
-			    {
-				    case ExceptionHandlerType.Filter:
-				    {
-					    var instr3 = exception.FilterStart;
-					    if (!blocks.TryGetValue(instr3, out var instr3Blocks))
-					    {
-						    instr3Blocks = [];
-						    blocks.Add(instr3, instr3Blocks);
-					    }
-					    instr3Blocks.Add(new CompileTimeExceptionBlock(ExceptionBlockType.BeginExceptFilterBlock));
-					    break;
-				    }
-				    case ExceptionHandlerType.Finally:
-					    var instr4 = handler_start;
-					    if (!blocks.TryGetValue(instr4, out var instr4Blocks))
-					    {
-						    instr4Blocks = [];
-						    blocks.Add(instr4, instr4Blocks);
-					    }
-					    instr4Blocks.Add(new CompileTimeExceptionBlock(ExceptionBlockType.BeginFinallyBlock));
-					    break;
-
-				    case ExceptionHandlerType.Catch:
-					    var instr5 = handler_start;
-					    if (!blocks.TryGetValue(instr5, out var instr5Blocks))
-					    {
-						    instr5Blocks = [];
-						    blocks.Add(instr5, instr5Blocks);
-					    }
-					    instr5Blocks.Add(new CompileTimeExceptionBlock(ExceptionBlockType.BeginCatchBlock, exception.CatchType));
-					    break;
-
-				    case ExceptionHandlerType.Fault:
-					    var instr6 = handler_start;
-					    if (!blocks.TryGetValue(instr6, out var instr6Blocks))
-					    {
-						    instr6Blocks = [];
-						    blocks.Add(instr6, instr6Blocks);
-					    }
-					    instr6Blocks.Add(new CompileTimeExceptionBlock(ExceptionBlockType.BeginFaultBlock));
-					    break;
-			    }
-		    }
-	    }
-
-	    List<Instruction> CopierFinalize(bool stripLastReturn, out bool outHasReturnCode, out bool outMethodEndsInDeadCode, List<Instruction> outEndLabels)
-	    {
-		    List<Instruction> result = [..body.Instructions];
-		    hasReturnCode = false;
-		    methodEndsInDeadCode = false;
-
-		    // pass1 - define labels and add them to instructions that are target of a jump
+		    // The FilterOffset property is meaningful only for Filter clauses.
+		    // The CatchType property is not meaningful for Filter or Finally clauses.
 		    //
-		    foreach (var instr in result)
+		    switch (exception.HandlerType)
 		    {
-			    switch (instr.OpCode.OperandType)
+			    case ExceptionHandlerType.Filter:
 			    {
-				    case OperandType.InlineSwitch:
-				    {
-					    var targets = instr.Operand as Instruction[];
-					    if (targets is not null)
-					    {
-						    var newOperand = new List<Instruction>();
-						    foreach (var target in targets)
-						    {
-							    if (!labels.TryGetValue(target, out var targetLabels))
-							    {
-								    targetLabels = [];
-								    labels.Add(target, targetLabels);
-							    }
-							    var label = Instruction.Create(OpCodes.Nop);
-							    targetLabels.Add(label);
-							    newOperand.Add(label);
-						    }
-						    instr.Operand = newOperand.ToArray();
-					    }
-					    break;
-				    }
-
-				    case OperandType.ShortInlineBrTarget:
-				    case OperandType.InlineBrTarget:
-				    {
-					    var target = instr.Operand as Instruction;
-					    if (target is not null)
-					    {
-						    if (!labels.TryGetValue(target, out var targetLabels))
-						    {
-							    targetLabels = [];
-							    labels.Add(target, targetLabels);
-						    }
-						    var newOperand = Instruction.Create(OpCodes.Nop);
-						    targetLabels.Add(newOperand);
-						    instr.Operand = newOperand;
-					    }
-					    break;
-				    }
+				    outFlow.AddBlock(exception.FilterStart, new CecilExceptionBlock(ExceptionBlockType.BeginExceptFilterBlock));
+				    break;
 			    }
-		    }
-
-		    // pass2 - filter through all processors
-		    //
-		    // Skipped
-
-		    // pass3 - check for any RET
-		    //
-		    outHasReturnCode = result.Any(code => code.OpCode == OpCodes.Ret);
-		    outMethodEndsInDeadCode = EndsInDeadCode(result);
-
-		    // pass4 - remove RET if it appears at the end
-		    //
-		    if (stripLastReturn)
-		    {
-			    while (true)
-			    {
-				    var lastInstruction = result.LastOrDefault();
-				    if (lastInstruction is null || lastInstruction.OpCode != OpCodes.Ret)
-					    break;
-
-				    // remember any existing labels
-				    if (labels.TryGetValue(lastInstruction, out var lastLabels))
-				    {
-					    outEndLabels.AddRange(lastLabels);
-				    }
-
-				    result.RemoveAt(result.Count - 1);
-			    }
-		    }
-
-		    return result;
-	    }
-	    
-	    bool EndsInDeadCode(List<Instruction> list)
-	    {
-		    var n = list.Count;
-		    if (n < 2 || list.Last().OpCode != OpCodes.Throw)
-			    return false;
-		    return list.GetRange(0, n - 1).All(code => code.OpCode != OpCodes.Ret);
-	    }
-	    
-	    #endregion
-	    
-	    #region Emit body
-	    
-	    IEnumerable<Instruction> CleanupCodes(List<Instruction> inReplacement, List<Instruction> outEndLabels)
-	    {
-		    foreach (var instr in inReplacement)
-		    {
-			    var code = instr.OpCode;
-			    if (code == OpCodes.Ret)
-			    {
-				    var endLabel = Instruction.Create(OpCodes.Nop);
-				    var br = Instruction.Create(OpCodes.Br, endLabel);
-				    if (labels.TryGetValue(instr, out var instrLabels))
-					    labels.Add(br, [..instrLabels]);
-				    if (blocks.TryGetValue(instr, out var instrBlocks))
-					    blocks.Add(br, [..instrBlocks]);
-				    yield return br;
-				    outEndLabels.Add(endLabel);
-			    }
-			    else if (_shortJumps.TryGetValue(code, out var longJump))
-			    {
-				    var newInstr = CopyInstr(instr);
-				    newInstr.OpCode = longJump;
-				    yield return newInstr;
-			    }
-			    else
-				    yield return instr;
-		    }
-	    }
-	    
-	    void EmitCodes(List<Instruction> newInstructions)
-	    {
-		    il.Clear();
-		    
-		    // pass5 - mark labels and exceptions and emit codes
-		    //
-		    newInstructions.Do(newInstr =>
-		    {
-			    // start all exception blocks
-			    if (blocks.TryGetValue(newInstr, out var instrBlocks))
-			    {
-				    instrBlocks.Do(EmitMarkBlockBefore);
-			    }
-			    
-			    // mark all labels
-			    if (labels.TryGetValue(newInstr, out var instrLabels))
-			    {
-				    instrLabels.Do(label => il.Append(label));
-			    }
-
-			    var code = newInstr.OpCode;
-			    var operand = newInstr.Operand;
-
-			    switch (code.OperandType)
-			    {
-				    case OperandType.InlineNone:
-				    {
-					    if (IsAnnotation(newInstr) == null)
-						    il.Emit(code);
-					    break;
-				    }
-				    case OperandType.InlineSig:
-				    {
-					    if (operand is null)
-						    throw new Exception($"Wrong null argument: {newInstr}");
-					    if ((operand is CallSite) is false)
-						    throw new Exception($"Wrong Emit argument type {operand.GetType()} in {newInstr}");
-					    il.Emit(code, (CallSite)operand);
-					    break;
-				    }
-				    default:
-				    {
-					    if (operand is null)
-						    throw new Exception($"Wrong null argument: {newInstr}");
-					    
-					    DynEmit(newInstr);
-					    break;
-				    }
-			    }
-
-			    if (instrBlocks != null)
-			    {
-				    instrBlocks.Do(EmitMarkBlockAfter);
-			    }
-		    });
-	    }
-	    
-	    void EmitMarkBlockBefore(CompileTimeExceptionBlock block)
-	    {
-		    switch (block.BlockType)
-		    {
-			    case ExceptionBlockType.BeginExceptionBlock:
-				    excHelper.BeginExceptionBlock();
+			    case ExceptionHandlerType.Finally:
+				    outFlow.AddBlock(exception.HandlerStart, new CecilExceptionBlock(ExceptionBlockType.BeginFinallyBlock));
 				    break;
 
-			    case ExceptionBlockType.BeginCatchBlock:
-				    excHelper.BeginCatchBlock(block.CatchType);
+			    case ExceptionHandlerType.Catch:
+				    outFlow.AddBlock(exception.HandlerStart, new CecilExceptionBlock(ExceptionBlockType.BeginCatchBlock, exception.CatchType));
 				    break;
 
-			    case ExceptionBlockType.BeginExceptFilterBlock:
-				    excHelper.BeginExceptFilterBlock();
-				    break;
-
-			    case ExceptionBlockType.BeginFaultBlock:
-				    excHelper.BeginFaultBlock();
-				    break;
-
-			    case ExceptionBlockType.BeginFinallyBlock:
-				    excHelper.BeginFinallyBlock();
+			    case ExceptionHandlerType.Fault:
+				    outFlow.AddBlock(exception.HandlerStart, new CecilExceptionBlock(ExceptionBlockType.BeginFaultBlock));
 				    break;
 		    }
 	    }
+    }
 
-	    void EmitMarkBlockAfter(CompileTimeExceptionBlock block)
-	    {
-		    switch (block.BlockType)
-		    {
-			    case ExceptionBlockType.EndExceptionBlock:
-				    excHelper.EndExceptionBlock();
-				    break;
-		    }
-	    }
+    private void CopierFinalize(CecilFlowHelper outFlow, MethodBody body, bool stripLastReturn, out bool hasReturnCode, out bool methodEndsInDeadCode, List<CecilLabel> outEndLabels)
+    {
+	    outFlow.AppendAll(body.Instructions);
+	    hasReturnCode = false;
+	    methodEndsInDeadCode = false;
 
-	    string? IsAnnotation(Instruction instr)
-		    => instr.OpCode == OpCodes.Nop ? instr.Operand as string : null;
-
-	    void DynEmit(Instruction instr)
+	    // pass1 - define labels and add them to instructions that are target of a jump
+	    //
+	    foreach (var instr in body.Instructions)
 	    {
 		    switch (instr.OpCode.OperandType)
 		    {
-			    case OperandType.InlineBrTarget:
-				    il.Emit(instr.OpCode, (Instruction)instr.Operand!); break;
-			    case OperandType.InlineField:
-				    il.Emit(instr.OpCode, (FieldReference)instr.Operand!); break;
-			    case OperandType.InlineI:
-				    il.Emit(instr.OpCode, (int)instr.Operand!); break;
-			    case OperandType.InlineI8:
-				    il.Emit(instr.OpCode, (long)instr.Operand!); break;
-			    case OperandType.InlineMethod:
-				    il.Emit(instr.OpCode, (MethodReference)instr.Operand!); break;
-			    case OperandType.InlineNone:
-				    il.Emit(instr.OpCode); break;
-			    case OperandType.InlinePhi:
-				    il.Emit(instr.OpCode); break;
-			    case OperandType.InlineR:
-				    il.Emit(instr.OpCode, (double)instr.Operand!); break;
-			    case OperandType.InlineSig:
-				    il.Emit(instr.OpCode, (CallSite)instr.Operand!); break;
-			    case OperandType.InlineString:
-				    il.Emit(instr.OpCode, (string)instr.Operand!); break;
 			    case OperandType.InlineSwitch:
-				    il.Emit(instr.OpCode, (Instruction[])instr.Operand!); break;
-			    case OperandType.InlineTok:
-				    if (instr.Operand is TypeReference typeRef)
-					    il.Emit(instr.OpCode, typeRef);
-				    else if (instr.Operand is FieldReference fieldRef)
-					    il.Emit(instr.OpCode, fieldRef);
-				    else if (instr.Operand is MethodReference methodRef)
-					    il.Emit(instr.OpCode, methodRef);
-				    else
-					    throw new ArgumentException("Invalid operand for InlineTok");
-				    break;
-			    case OperandType.InlineType:
-				    il.Emit(instr.OpCode, (TypeReference)instr.Operand!); break;
-			    case OperandType.InlineVar:
-				    il.Emit(instr.OpCode, (VariableDefinition)instr.Operand!); break;
-			    case OperandType.InlineArg:
-				    il.Emit(instr.OpCode, (ParameterDefinition)instr.Operand!); break;
-			    case OperandType.ShortInlineBrTarget:
-				    il.Emit(instr.OpCode, (Instruction)instr.Operand!); break;
-			    case OperandType.ShortInlineI:
-				    il.Emit(instr.OpCode, (sbyte)instr.Operand!); break;
-			    case OperandType.ShortInlineR:
-				    il.Emit(instr.OpCode, (float)instr.Operand!); break;
-			    case OperandType.ShortInlineVar:
-				    il.Emit(instr.OpCode, (VariableDefinition)instr.Operand!); break;
-			    case OperandType.ShortInlineArg:
-				    il.Emit(instr.OpCode, (ParameterDefinition)instr.Operand!); break;
-			    default:
-				    throw new Exception($"Wrong Emit argument type {instr.Operand.GetType()} in {instr}");
-		    }
-	    }
-	    
-	    #endregion
-
-	    #region Codegen prefixes, postfixes, finalizers
-	    
-	    void AddPrefixes()
-	    {
-		    foreach (var fix in prefixes)
-		    {
-			    var skipLabel = AffectsOriginal(fix) ? Instruction.Create(OpCodes.Nop) : null;
-			    if (skipLabel != null)
 			    {
-				    instructions.Add(Instruction.Create(OpCodes.Ldloc, runOriginalVariable));
-				    instructions.Add(Instruction.Create(OpCodes.Brfalse, skipLabel));
-			    }
-
-			    var tmpBoxVars = new List<KeyValuePair<VariableDefinition, TypeReference>>();
-			    instructions.AddRange(EmitCallParameter(fix, false, fix.StaticFieldInstance, out var tmpInstanceBoxingVar, out var tmpObjectVar, out var refResultUsed, tmpBoxVars));
-			    instructions.Add(Instruction.Create(OpCodes.Call, fix.Method));
-			    if (OriginalParameters(fix.Method!).Any(pair => pair.realName == MethodPatcherTools.ARGS_ARRAY_VAR))
-				    instructions.AddRange(RestoreArgumentArray());
-			    if (tmpInstanceBoxingVar != null)
-			    {
-				    instructions.Add(Instruction.Create(OpCodes.Ldarg_0));
-				    instructions.Add(Instruction.Create(OpCodes.Ldloc, tmpInstanceBoxingVar));
-				    instructions.Add(Instruction.Create(OpCodes.Unbox_Any, originalDef.DeclaringType));
-				    instructions.Add(Instruction.Create(OpCodes.Stobj, originalDef.DeclaringType));
-			    }
-
-			    if (refResultUsed)
-			    {
-				    var label = Instruction.Create(OpCodes.Nop);
-				    instructions.Add(Instruction.Create(OpCodes.Ldloc, injectedLocals[InjectionType.ResultRef]));
-				    instructions.Add(Instruction.Create(OpCodes.Brfalse_S, label));
-
-				    instructions.Add(Instruction.Create(OpCodes.Ldloc, injectedLocals[InjectionType.ResultRef]));
-				    instructions.Add(Instruction.Create(OpCodes.Callvirt, CompileTimeAccessTools.Method(injectedLocals[InjectionType.ResultRef].VariableType, "Invoke")));
-				    instructions.Add(Instruction.Create(OpCodes.Stloc, injectedLocals[InjectionType.Result]));
-				    instructions.Add(Instruction.Create(OpCodes.Ldnull));
-				    instructions.Add(Instruction.Create(OpCodes.Stloc, injectedLocals[InjectionType.ResultRef]));
-
-				    var instr = Instruction.Create(OpCodes.Nop);
-				    labels.Add(instr, [label]);
-				    instructions.Add(instr);
-			    }
-			    else if (tmpObjectVar != null)
-			    {
-				    instructions.Add(Instruction.Create(OpCodes.Ldloc, tmpObjectVar));
-				    instructions.Add(Instruction.Create(OpCodes.Unbox_Any, GetReturnedType(originalDef)));
-				    instructions.Add(Instruction.Create(OpCodes.Stloc, injectedLocals[InjectionType.Result]));
-			    }
-
-			    tmpBoxVars.Do(tmpBoxVar =>
-			    {
-				    instructions.Add(Instruction.Create(originalDef.IsStatic ? OpCodes.Ldarg_0 : OpCodes.Ldarg_1));
-				    instructions.Add(Instruction.Create(OpCodes.Ldloc, tmpBoxVar.Key));
-				    instructions.Add(Instruction.Create(OpCodes.Unbox_Any, tmpBoxVar.Value));
-				    instructions.Add(Instruction.Create(OpCodes.Stobj, tmpBoxVar.Value));
-			    });
-
-			    var returnType = fix.Method!.ReturnType;
-			    if (!EqualTypeRef(returnType, ts.Void))
-			    {
-				    if (!EqualTypeRef(returnType, ts.Boolean))
-					    throw new Exception(
-						    $"Prefix patch {fix} has not \"bool\" or \"void\" return type: {returnType}");
-				    instructions.Add(Instruction.Create(OpCodes.Stloc, runOriginalVariable));
-			    }
-
-			    if (skipLabel != null)
-			    {
-				    var instr = Instruction.Create(OpCodes.Nop);
-				    labels.Add(instr, [skipLabel]);
-				    instructions.Add(instr);
-			    }
-		    }
-	    }
-
-	    bool AddPostfixes(bool passthroughPatches)
-	    {
-		    var result = false;
-		    var originalIsStatic = originalDef.IsStatic;
-		    foreach (var fix in postfixes.Where(fix => passthroughPatches == !EqualTypeRef(fix.Method!.ReturnType, ts.Void)))
-		    {
-			    var tmpBoxVars = new List<KeyValuePair<VariableDefinition, TypeReference>>();
-			    instructions.AddRange(EmitCallParameter(fix, true, fix.StaticFieldInstance, out var tmpInstanceBoxingVar, out var tmpObjectVar, out var refResultUsed, tmpBoxVars));
-			    instructions.Add(Instruction.Create(OpCodes.Call, fix.Method));
-			    if (OriginalParameters(fix.Method!).Any(pair => pair.realName == MethodPatcherTools.ARGS_ARRAY_VAR))
-				    instructions.AddRange(RestoreArgumentArray());
-			    if (tmpInstanceBoxingVar != null)
-			    {
-				    instructions.Add(Instruction.Create(OpCodes.Ldarg_0));
-				    instructions.Add(Instruction.Create(OpCodes.Ldloc, tmpInstanceBoxingVar));
-				    instructions.Add(Instruction.Create(OpCodes.Unbox_Any, originalDef.DeclaringType));
-				    instructions.Add(Instruction.Create(OpCodes.Stobj, originalDef.DeclaringType));
-			    }
-
-			    if (refResultUsed)
-			    {
-				    var label = Instruction.Create(OpCodes.Nop);
-				    instructions.Add(Instruction.Create(OpCodes.Ldloc, injectedLocals[InjectionType.ResultRef]));
-				    instructions.Add(Instruction.Create(OpCodes.Brfalse_S, label));
-
-				    instructions.Add(Instruction.Create(OpCodes.Ldloc, injectedLocals[InjectionType.ResultRef]));
-				    instructions.Add(Instruction.Create(OpCodes.Callvirt, CompileTimeAccessTools.Method(injectedLocals[InjectionType.ResultRef].VariableType, "Invoke")));
-				    instructions.Add(Instruction.Create(OpCodes.Stloc, injectedLocals[InjectionType.Result]));
-				    instructions.Add(Instruction.Create(OpCodes.Ldnull));
-				    instructions.Add(Instruction.Create(OpCodes.Stloc, injectedLocals[InjectionType.ResultRef]));
-
-					var instr = Instruction.Create(OpCodes.Nop);
-					labels.Add(instr, [label]);
-				    instructions.Add(instr);
-			    }
-			    else if (tmpObjectVar != null)
-			    {
-				    instructions.Add(Instruction.Create(OpCodes.Ldloc, tmpObjectVar));
-				    instructions.Add(Instruction.Create(OpCodes.Unbox_Any, GetReturnedType(originalDef)));
-				    instructions.Add(Instruction.Create(OpCodes.Stloc, injectedLocals[InjectionType.Result]));
-			    }
-
-			    tmpBoxVars.Do(tmpBoxVar =>
-			    {
-				    instructions.Add(Instruction.Create(originalIsStatic ? OpCodes.Ldarg_0 : OpCodes.Ldarg_1));
-				    instructions.Add(Instruction.Create(OpCodes.Ldloc, tmpBoxVar.Key));
-				    instructions.Add(Instruction.Create(OpCodes.Unbox_Any, tmpBoxVar.Value));
-				    instructions.Add(Instruction.Create(OpCodes.Stobj, tmpBoxVar.Value));
-			    });
-
-			    if (!EqualTypeRef(fix.Method!.ReturnType, ts.Void))
-			    {
-				    var firstFixParam = fix.Method.Parameters.FirstOrDefault();
-				    var hasPassThroughResultParam =
-					    firstFixParam is not null && EqualTypeRef(fix.Method.ReturnType, firstFixParam.ParameterType);
-				    if (hasPassThroughResultParam)
-					    result = true;
-				    else
+				    if (instr.Operand is Instruction[] targets)
 				    {
-					    if (firstFixParam is not null)
-						    throw new Exception(
-							    $"Return type of pass through postfix {fix} does not match type of its first parameter");
-
-					    throw new Exception($"Postfix patch {fix} must have a \"void\" return type");
+					    var newOperand = new List<Instruction>();
+					    foreach (var target in targets)
+					    {
+						    var label = outFlow.DefineLabel();
+							outFlow.AddLabel(target, label);
+						    newOperand.Add(label.Instruction);
+					    }
+					    instr.Operand = newOperand.ToArray();
 				    }
+				    break;
+			    }
+
+			    case OperandType.ShortInlineBrTarget:
+			    case OperandType.InlineBrTarget:
+			    {
+				    if (instr.Operand is Instruction target)
+				    {
+						var label = outFlow.DefineLabel();
+						var newOperand = label.Instruction;
+						outFlow.AddLabel(target, label);
+					    instr.Operand = newOperand;
+				    }
+				    break;
+			    }
+		    }
+	    }
+
+	    // pass2 - filter through all processors
+	    //
+	    // Skipped
+
+	    // pass3 - check for any RET
+	    //
+	    hasReturnCode = outFlow.Instructions.Any(code => code.OpCode == OpCodes.Ret);
+	    methodEndsInDeadCode = EndsInDeadCode(outFlow);
+
+	    // pass4 - remove RET if it appears at the end
+	    //
+	    if (stripLastReturn)
+	    {
+		    while (true)
+		    {
+			    var lastInstruction = outFlow.Instructions.LastOrDefault();
+			    if (lastInstruction is null || lastInstruction.OpCode != OpCodes.Ret)
+				    break;
+
+			    // remember any existing labels
+			    if (outFlow.TryGetLabels(lastInstruction, out var lastLabels))
+			    {
+				    outEndLabels.AddRange(lastLabels);
+			    }
+
+			    outFlow.Remove(lastInstruction);
+		    }
+	    }
+    }
+    
+    private bool EndsInDeadCode(CecilFlowHelper flow)
+    {
+	    var list = flow.Instructions;
+	    var n = list.Count;
+	    if (n < 2 || list.Last().OpCode != OpCodes.Throw)
+		    return false;
+	    return list.SkipLast(1).All(code => code.OpCode != OpCodes.Ret);
+    }
+    
+    private void CleanupCodes(CecilFlowHelper inOutFlow, List<CecilLabel> outEndLabels)
+    {
+	    foreach (var instr in inOutFlow.Instructions.ToList())
+	    {
+		    var code = instr.OpCode;
+		    if (code == OpCodes.Ret)
+		    {
+			    var endLabel = inOutFlow.DefineLabel();
+			    var br = Instruction.Create(OpCodes.Br, endLabel.Instruction);
+			    inOutFlow.Replace(instr, br);
+			    outEndLabels.Add(endLabel);
+		    }
+		    else if (_shortJumps.TryGetValue(code, out var longJump))
+		    {
+			    var newInstr = instr.GetPrototype();
+			    newInstr.OpCode = longJump;
+			    inOutFlow.Replace(instr, newInstr);
+		    }
+	    }
+    }
+    
+    #endregion
+    
+    #region Emit body
+    
+    private void EmitCodes(ILProcessor il, CecilFlowHelper flow)
+    {
+	    il.Clear();
+	    
+	    var excHelper = new CecilEmitExceptionHelper(il);
+	    
+	    // pass5 - mark labels and exceptions and emit codes
+	    //
+	    flow.Instructions.Do(newInstr =>
+	    {
+		    // start all exception blocks
+		    if (flow.TryGetBlocks(newInstr, out var instrBlocks))
+		    {
+			    instrBlocks.Do(x => EmitMarkBlockBefore(excHelper, x));
+		    }
+		    
+		    // mark all labels
+		    if (flow.TryGetLabels(newInstr, out var instrLabels))
+		    {
+			    instrLabels.Do(label => il.Append(label.Instruction));
+		    }
+
+		    var code = newInstr.OpCode;
+		    var operand = newInstr.Operand;
+
+		    switch (code.OperandType)
+		    {
+			    case OperandType.InlineNone:
+			    {
+				    if (IsAnnotation(newInstr) == null)
+					    il.Emit(code);
+				    break;
+			    }
+			    case OperandType.InlineSig:
+			    {
+				    if (operand is null)
+					    throw new Exception($"Wrong null argument: {newInstr}");
+				    if ((operand is CallSite) is false)
+					    throw new Exception($"Wrong Emit argument type {operand.GetType()} in {newInstr}");
+				    il.Emit(code, (CallSite)operand);
+				    break;
+			    }
+			    default:
+			    {
+				    if (operand is null)
+					    throw new Exception($"Wrong null argument: {newInstr}");
+				    
+				    DynEmit(il, newInstr);
+				    break;
 			    }
 		    }
 
-		    return result;
-	    }
-
-	    bool AddFinalizers(bool catchExceptions)
-	    {
-		    var rethrowPossible = true;
-		    var originalIsStatic = originalDef.IsStatic;
-		    finalizers.Do(fix =>
+		    if (flow.TryGetBlocks(newInstr, out instrBlocks))
 		    {
-			    if (catchExceptions)
-			    {
-				    
-				    instructions.Add(MarkBlock(ExceptionBlockType.BeginExceptionBlock));
-			    }
+			    instrBlocks.Do(x => EmitMarkBlockAfter(excHelper, x));
+		    }
+	    });
+    }
+    
+    private void EmitMarkBlockBefore(CecilEmitExceptionHelper excHelper, CecilExceptionBlock block)
+    {
+	    switch (block.BlockType)
+	    {
+		    case ExceptionBlockType.BeginExceptionBlock:
+			    excHelper.BeginExceptionBlock();
+			    break;
 
-			    var tmpBoxVars = new List<KeyValuePair<VariableDefinition, TypeReference>>();
-			    instructions.AddRange(EmitCallParameter(fix, false, fix.StaticFieldInstance, out var tmpInstanceBoxingVar, out var tmpObjectVar, out var refResultUsed, tmpBoxVars));
-			    instructions.Add(Instruction.Create(OpCodes.Call, fix.Method!));
-			    if (OriginalParameters(fix.Method!).Any(pair => pair.realName == MethodPatcherTools.ARGS_ARRAY_VAR))
-				    instructions.AddRange(RestoreArgumentArray());
-			    if (tmpInstanceBoxingVar != null)
-			    {
-				    instructions.Add(Instruction.Create(OpCodes.Ldarg_0));
-				    instructions.Add(Instruction.Create(OpCodes.Ldloc, tmpInstanceBoxingVar));
-				    instructions.Add(Instruction.Create(OpCodes.Unbox_Any, originalDef.DeclaringType));
-				    instructions.Add(Instruction.Create(OpCodes.Stobj, originalDef.DeclaringType));
-			    }
+		    case ExceptionBlockType.BeginCatchBlock:
+			    excHelper.BeginCatchBlock(block.CatchType!);
+			    break;
 
-			    if (refResultUsed)
-			    {
-				    var label = Instruction.Create(OpCodes.Nop);
-				    instructions.Add(Instruction.Create(OpCodes.Ldloc, injectedLocals[InjectionType.ResultRef]));
-				    instructions.Add(Instruction.Create(OpCodes.Brfalse_S, label));
+		    case ExceptionBlockType.BeginExceptFilterBlock:
+			    excHelper.BeginExceptFilterBlock();
+			    break;
 
-				    instructions.Add(Instruction.Create(OpCodes.Ldloc, injectedLocals[InjectionType.ResultRef]));
-				    instructions.Add(Instruction.Create(OpCodes.Callvirt, CompileTimeAccessTools.Method(injectedLocals[InjectionType.ResultRef].VariableType, "Invoke")));
-				    instructions.Add(Instruction.Create(OpCodes.Stloc, injectedLocals[InjectionType.Result]));
-				    instructions.Add(Instruction.Create(OpCodes.Ldnull));
-				    instructions.Add(Instruction.Create(OpCodes.Stloc, injectedLocals[InjectionType.ResultRef]));
+		    case ExceptionBlockType.BeginFaultBlock:
+			    excHelper.BeginFaultBlock();
+			    break;
 
-				    var instr = Instruction.Create(OpCodes.Nop);
-				    labels.Add(instr, [label]);
-				    instructions.Add(instr);
-			    }
-			    else if (tmpObjectVar != null)
-			    {
-				    instructions.Add(Instruction.Create(OpCodes.Ldloc, tmpObjectVar));
-				    instructions.Add(Instruction.Create(OpCodes.Unbox_Any, GetReturnedType(originalDef)));
-				    instructions.Add(Instruction.Create(OpCodes.Stloc, injectedLocals[InjectionType.Result]));
-			    }
+		    case ExceptionBlockType.BeginFinallyBlock:
+			    excHelper.BeginFinallyBlock();
+			    break;
+	    }
+    }
 
-			    tmpBoxVars.Do(tmpBoxVar =>
-			    {
-				    instructions.Add(Instruction.Create(originalIsStatic ? OpCodes.Ldarg_0 : OpCodes.Ldarg_1));
-				    instructions.Add(Instruction.Create(OpCodes.Ldloc, tmpBoxVar.Key));
-				    instructions.Add(Instruction.Create(OpCodes.Unbox_Any, tmpBoxVar.Value));
-				    instructions.Add(Instruction.Create(OpCodes.Stobj, tmpBoxVar.Value));
-			    });
+    private void EmitMarkBlockAfter(CecilEmitExceptionHelper excHelper, CecilExceptionBlock block)
+    {
+	    switch (block.BlockType)
+	    {
+		    case ExceptionBlockType.EndExceptionBlock:
+			    excHelper.EndExceptionBlock();
+			    break;
+	    }
+    }
 
-			    if (!EqualTypeRef(fix.Method!.ReturnType, ts.Void))
-			    {
-				    instructions.Add(Instruction.Create(OpCodes.Stloc, injectedLocals[InjectionType.Exception]));
-				    rethrowPossible = false;
-			    }
+    private string? IsAnnotation(Instruction instr)
+	    => instr.OpCode == OpCodes.Nop ? instr.Operand as string : null;
 
-			    if (catchExceptions)
-			    {
-				    instructions.Add(MarkBlock(ExceptionBlockType.BeginCatchBlock));
-				    instructions.Add(Instruction.Create(OpCodes.Pop));
-				    instructions.Add(MarkBlock(ExceptionBlockType.EndExceptionBlock));
-			    }
+    private void DynEmit(ILProcessor il, Instruction instr)
+    {
+	    switch (instr.OpCode.OperandType)
+	    {
+		    case OperandType.InlineBrTarget:
+			    il.Emit(instr.OpCode, (Instruction)instr.Operand!); break;
+		    case OperandType.InlineField:
+			    il.Emit(instr.OpCode, (FieldReference)instr.Operand!); break;
+		    case OperandType.InlineI:
+			    il.Emit(instr.OpCode, (int)instr.Operand!); break;
+		    case OperandType.InlineI8:
+			    il.Emit(instr.OpCode, (long)instr.Operand!); break;
+		    case OperandType.InlineMethod:
+			    il.Emit(instr.OpCode, (MethodReference)instr.Operand!); break;
+		    case OperandType.InlineNone:
+			    il.Emit(instr.OpCode); break;
+		    case OperandType.InlinePhi:
+			    il.Emit(instr.OpCode); break;
+		    case OperandType.InlineR:
+			    il.Emit(instr.OpCode, (double)instr.Operand!); break;
+		    case OperandType.InlineSig:
+			    il.Emit(instr.OpCode, (CallSite)instr.Operand!); break;
+		    case OperandType.InlineString:
+			    il.Emit(instr.OpCode, (string)instr.Operand!); break;
+		    case OperandType.InlineSwitch:
+			    il.Emit(instr.OpCode, (Instruction[])instr.Operand!); break;
+		    case OperandType.InlineTok:
+			    if (instr.Operand is TypeReference typeRef)
+				    il.Emit(instr.OpCode, typeRef);
+			    else if (instr.Operand is FieldReference fieldRef)
+				    il.Emit(instr.OpCode, fieldRef);
+			    else if (instr.Operand is MethodReference methodRef)
+				    il.Emit(instr.OpCode, methodRef);
+			    else
+				    throw new ArgumentException("Invalid operand for InlineTok");
+			    break;
+		    case OperandType.InlineType:
+			    il.Emit(instr.OpCode, (TypeReference)instr.Operand!); break;
+		    case OperandType.InlineVar:
+			    il.Emit(instr.OpCode, (VariableDefinition)instr.Operand!); break;
+		    case OperandType.InlineArg:
+			    il.Emit(instr.OpCode, (ParameterDefinition)instr.Operand!); break;
+		    case OperandType.ShortInlineBrTarget:
+			    il.Emit(instr.OpCode, (Instruction)instr.Operand!); break;
+		    case OperandType.ShortInlineI:
+			    il.Emit(instr.OpCode, (sbyte)instr.Operand!); break;
+		    case OperandType.ShortInlineR:
+			    il.Emit(instr.OpCode, (float)instr.Operand!); break;
+		    case OperandType.ShortInlineVar:
+			    il.Emit(instr.OpCode, (VariableDefinition)instr.Operand!); break;
+		    case OperandType.ShortInlineArg:
+			    il.Emit(instr.OpCode, (ParameterDefinition)instr.Operand!); break;
+		    default:
+			    throw new Exception($"Wrong Emit argument type {instr.Operand.GetType()} in {instr}");
+	    }
+    }
+    
+    #endregion
+
+    #region Codegen prefixes, postfixes, finalizers
+    
+    private void AddPrefixes(CecilFlowHelper outFlow, OriginalMethod original, IEnumerable<CompileTimePreludeMethod> prefixes)
+    {
+	    var originalDef = original.MethodDef;
+	    var ts = originalDef.Module.TypeSystem;
+	    
+	    foreach (var fix in prefixes)
+	    {
+		    var skipLabel = AffectsOriginal(original, fix) ? outFlow.DefineLabel() : (CecilLabel?)null;
+		    if (skipLabel != null)
+		    {
+			    outFlow.Append(Instruction.Create(OpCodes.Ldloc, original.RunOriginalVariable));
+			    outFlow.Append(Instruction.Create(OpCodes.Brfalse, skipLabel.Value.Instruction));
+		    }
+
+		    var tmpBoxVars = new List<KeyValuePair<VariableDefinition, TypeReference>>();
+		    outFlow.AppendAll(
+			    EmitCallParameter(
+				    original,
+				    fix, 
+				    false, 
+				    fix.StaticFieldInstance,
+				    out var tmpInstanceBoxingVar, 
+				    out var tmpObjectVar, 
+				    out var refResultUsed,
+				    tmpBoxVars
+				)
+			);
+		    outFlow.Append(Instruction.Create(OpCodes.Call, fix.Method));
+		    if (OriginalParameters(fix.Method!).Any(pair => pair.realName == MethodPatcherTools.ARGS_ARRAY_VAR))
+			    outFlow.AppendAll(RestoreArgumentArray(original));
+		    if (tmpInstanceBoxingVar != null)
+		    {
+			    outFlow.Append(Instruction.Create(OpCodes.Ldarg_0));
+			    outFlow.Append(Instruction.Create(OpCodes.Ldloc, tmpInstanceBoxingVar));
+			    outFlow.Append(Instruction.Create(OpCodes.Unbox_Any, originalDef.DeclaringType));
+			    outFlow.Append(Instruction.Create(OpCodes.Stobj, originalDef.DeclaringType));
+		    }
+
+		    if (refResultUsed)
+		    {
+			    var label = outFlow.DefineLabel();
+			    outFlow.Append(Instruction.Create(OpCodes.Ldloc, original.InjectedLocals[InjectionType.ResultRef]));
+			    outFlow.Append(Instruction.Create(OpCodes.Brfalse_S, label.Instruction));
+
+			    outFlow.Append(Instruction.Create(OpCodes.Ldloc, original.InjectedLocals[InjectionType.ResultRef]));
+			    outFlow.Append(Instruction.Create(OpCodes.Callvirt, CompileTimeAccessTools.Method(original.InjectedLocals[InjectionType.ResultRef].VariableType, "Invoke")));
+			    outFlow.Append(Instruction.Create(OpCodes.Stloc, original.InjectedLocals[InjectionType.Result]));
+			    outFlow.Append(Instruction.Create(OpCodes.Ldnull));
+			    outFlow.Append(Instruction.Create(OpCodes.Stloc, original.InjectedLocals[InjectionType.ResultRef]));
+
+			    var instr = Instruction.Create(OpCodes.Nop);
+			    outFlow.AddLabel(instr, label);
+			    outFlow.Append(instr);
+		    }
+		    else if (tmpObjectVar != null)
+		    {
+			    outFlow.Append(Instruction.Create(OpCodes.Ldloc, tmpObjectVar));
+			    outFlow.Append(Instruction.Create(OpCodes.Unbox_Any, GetReturnedType(originalDef)));
+			    outFlow.Append(Instruction.Create(OpCodes.Stloc, original.InjectedLocals[InjectionType.Result]));
+		    }
+
+		    tmpBoxVars.Do(tmpBoxVar =>
+		    {
+			    outFlow.Append(Instruction.Create(originalDef.IsStatic ? OpCodes.Ldarg_0 : OpCodes.Ldarg_1));
+			    outFlow.Append(Instruction.Create(OpCodes.Ldloc, tmpBoxVar.Key));
+			    outFlow.Append(Instruction.Create(OpCodes.Unbox_Any, tmpBoxVar.Value));
+			    outFlow.Append(Instruction.Create(OpCodes.Stobj, tmpBoxVar.Value));
 		    });
 
-		    return rethrowPossible;
-	    }
-
-	    #endregion
-	    
-	    #region Codegen snippets
-	    
-	    List<Instruction> PrepareArgumentArray()
-	    {
-		    var result = new List<Instruction>();
-		    var originalIsStatic = originalDef.IsStatic;
-		    var parameters = originalDef.Parameters;
-		    if (!originalIsStatic)
-			    parameters = [body.ThisParameter, ..parameters];
-		    var i = 0;
-		    foreach (var pInfo in parameters)
+		    var returnType = fix.Method!.ReturnType;
+		    if (!EqualTypeRef(returnType, ts.Void))
 		    {
-			    if (pInfo.IsOut || pInfo.Attributes.HasFlag(ParameterAttributes.Retval))
-				    result.AddRange(InitializeOutParameter(pInfo, pInfo.ParameterType));
+			    if (!EqualTypeRef(returnType, ts.Boolean))
+				    throw new Exception(
+					    $"Prefix patch {fix} has not \"bool\" or \"void\" return type: {returnType}");
+			    outFlow.Append(Instruction.Create(OpCodes.Stloc, original.RunOriginalVariable));
 		    }
 
-		    result.Add(Instruction.Create(OpCodes.Ldc_I4, parameters.Count));
-		    result.Add(Instruction.Create(OpCodes.Newarr, module.ImportReference(typeof(object))));
-		    i = 0;
-		    var arrayIdx = 0;
-		    foreach (var pInfo in parameters)
+		    if (skipLabel != null)
 		    {
-			    var pType = pInfo.ParameterType;
-			    var paramByRef = pType.IsByReference;
-			    if (paramByRef)
-				    pType = pType.GetElementType();
-			    result.Add(Instruction.Create(OpCodes.Dup));
-			    result.Add(Instruction.Create(OpCodes.Ldc_I4, arrayIdx++));
-			    result.Add(Instruction.Create(OpCodes.Ldarg_S, pInfo));
-			    if (paramByRef)
+			    var instr = Instruction.Create(OpCodes.Nop);
+			    outFlow.AddLabel(instr, skipLabel.Value);
+			    outFlow.Append(instr);
+		    }
+	    }
+    }
+
+    private bool AddPostfixes(CecilFlowHelper outFlow, bool passthroughPatches, OriginalMethod original, IEnumerable<CompileTimePreludeMethod> postfixes)
+    {
+	    var originalDef = original.MethodDef;
+	    var ts = originalDef.Module.TypeSystem;
+	    
+	    var result = false;
+	    var originalIsStatic = originalDef.IsStatic;
+	    foreach (var fix in postfixes.Where(fix => passthroughPatches == !EqualTypeRef(fix.Method!.ReturnType, ts.Void)))
+	    {
+		    var tmpBoxVars = new List<KeyValuePair<VariableDefinition, TypeReference>>();
+		    outFlow.AppendAll(
+			    EmitCallParameter(
+				    original, 
+				    fix,
+				    true,
+				    fix.StaticFieldInstance,
+				    out var tmpInstanceBoxingVar, 
+				    out var tmpObjectVar,
+				    out var refResultUsed, 
+				    tmpBoxVars
+				)
+			);
+		    outFlow.Append(Instruction.Create(OpCodes.Call, fix.Method));
+		    if (OriginalParameters(fix.Method!).Any(pair => pair.realName == MethodPatcherTools.ARGS_ARRAY_VAR))
+			    outFlow.AppendAll(RestoreArgumentArray(original));
+		    if (tmpInstanceBoxingVar != null)
+		    {
+			    outFlow.Append(Instruction.Create(OpCodes.Ldarg_0));
+			    outFlow.Append(Instruction.Create(OpCodes.Ldloc, tmpInstanceBoxingVar));
+			    outFlow.Append(Instruction.Create(OpCodes.Unbox_Any, originalDef.DeclaringType));
+			    outFlow.Append(Instruction.Create(OpCodes.Stobj, originalDef.DeclaringType));
+		    }
+
+		    if (refResultUsed)
+		    {
+			    var label = outFlow.DefineLabel();
+			    outFlow.Append(Instruction.Create(OpCodes.Ldloc, original.InjectedLocals[InjectionType.ResultRef]));
+			    outFlow.Append(Instruction.Create(OpCodes.Brfalse_S, label.Instruction));
+
+			    outFlow.Append(Instruction.Create(OpCodes.Ldloc, original.InjectedLocals[InjectionType.ResultRef]));
+			    outFlow.Append(Instruction.Create(OpCodes.Callvirt, CompileTimeAccessTools.Method(original.InjectedLocals[InjectionType.ResultRef].VariableType, "Invoke")));
+			    outFlow.Append(Instruction.Create(OpCodes.Stloc, original.InjectedLocals[InjectionType.Result]));
+			    outFlow.Append(Instruction.Create(OpCodes.Ldnull));
+			    outFlow.Append(Instruction.Create(OpCodes.Stloc, original.InjectedLocals[InjectionType.ResultRef]));
+
+				var instr = Instruction.Create(OpCodes.Nop);
+				outFlow.AddLabel(instr, label);
+			    outFlow.Append(instr);
+		    }
+		    else if (tmpObjectVar != null)
+		    {
+			    outFlow.Append(Instruction.Create(OpCodes.Ldloc, tmpObjectVar));
+			    outFlow.Append(Instruction.Create(OpCodes.Unbox_Any, GetReturnedType(originalDef)));
+			    outFlow.Append(Instruction.Create(OpCodes.Stloc, original.InjectedLocals[InjectionType.Result]));
+		    }
+
+		    tmpBoxVars.Do(tmpBoxVar =>
+		    {
+			    outFlow.Append(Instruction.Create(originalIsStatic ? OpCodes.Ldarg_0 : OpCodes.Ldarg_1));
+			    outFlow.Append(Instruction.Create(OpCodes.Ldloc, tmpBoxVar.Key));
+			    outFlow.Append(Instruction.Create(OpCodes.Unbox_Any, tmpBoxVar.Value));
+			    outFlow.Append(Instruction.Create(OpCodes.Stobj, tmpBoxVar.Value));
+		    });
+
+		    if (!EqualTypeRef(fix.Method!.ReturnType, ts.Void))
+		    {
+			    var firstFixParam = fix.Method.Parameters.FirstOrDefault();
+			    var hasPassThroughResultParam =
+				    firstFixParam is not null && EqualTypeRef(fix.Method.ReturnType, firstFixParam.ParameterType);
+			    if (hasPassThroughResultParam)
+				    result = true;
+			    else
 			    {
-				    if (IsStruct(pType))
-					    result.Add(Instruction.Create(OpCodes.Ldobj, pType));
-				    else
-					    result.Add(LoadIndOpCodeFor(pType));
+				    if (firstFixParam is not null)
+					    throw new Exception(
+						    $"Return type of pass through postfix {fix} does not match type of its first parameter");
+
+				    throw new Exception($"Postfix patch {fix} must have a \"void\" return type");
 			    }
+		    }
+	    }
+
+	    return result;
+    }
+
+    private bool AddFinalizers(CecilFlowHelper outFlow, bool catchExceptions, OriginalMethod original, IEnumerable<CompileTimePreludeMethod> finalizers)
+    {
+	    var originalDef = original.MethodDef;
+	    var module = originalDef.Module;
+	    var ts = module.TypeSystem;
+	    
+	    var rethrowPossible = true;
+	    var originalIsStatic = originalDef.IsStatic;
+	    finalizers.Do(fix =>
+	    {
+		    if (catchExceptions)
+		    {
+			    
+			    outFlow.Append(MarkBlock(outFlow, ExceptionBlockType.BeginExceptionBlock, module));
+		    }
+
+		    var tmpBoxVars = new List<KeyValuePair<VariableDefinition, TypeReference>>();
+		    outFlow.AppendAll(
+			    EmitCallParameter(
+				    original,
+				    fix,
+				    false,
+				    fix.StaticFieldInstance,
+				    out var tmpInstanceBoxingVar,
+				    out var tmpObjectVar, 
+				    out var refResultUsed,
+				    tmpBoxVars
+				)
+			);
+		    outFlow.Append(Instruction.Create(OpCodes.Call, fix.Method!));
+		    if (OriginalParameters(fix.Method!).Any(pair => pair.realName == MethodPatcherTools.ARGS_ARRAY_VAR))
+			    outFlow.AppendAll(RestoreArgumentArray(original));
+		    if (tmpInstanceBoxingVar != null)
+		    {
+			    outFlow.Append(Instruction.Create(OpCodes.Ldarg_0));
+			    outFlow.Append(Instruction.Create(OpCodes.Ldloc, tmpInstanceBoxingVar));
+			    outFlow.Append(Instruction.Create(OpCodes.Unbox_Any, originalDef.DeclaringType));
+			    outFlow.Append(Instruction.Create(OpCodes.Stobj, originalDef.DeclaringType));
+		    }
+
+		    if (refResultUsed)
+		    {
+			    var label = outFlow.DefineLabel();
+			    outFlow.Append(Instruction.Create(OpCodes.Ldloc, original.InjectedLocals[InjectionType.ResultRef]));
+			    outFlow.Append(Instruction.Create(OpCodes.Brfalse_S, label.Instruction));
+
+			    outFlow.Append(Instruction.Create(OpCodes.Ldloc, original.InjectedLocals[InjectionType.ResultRef]));
+			    outFlow.Append(Instruction.Create(OpCodes.Callvirt, CompileTimeAccessTools.Method(original.InjectedLocals[InjectionType.ResultRef].VariableType, "Invoke")));
+			    outFlow.Append(Instruction.Create(OpCodes.Stloc, original.InjectedLocals[InjectionType.Result]));
+			    outFlow.Append(Instruction.Create(OpCodes.Ldnull));
+			    outFlow.Append(Instruction.Create(OpCodes.Stloc, original.InjectedLocals[InjectionType.ResultRef]));
+
+			    var instr = Instruction.Create(OpCodes.Nop);
+			    outFlow.AddLabel(instr, label);
+			    outFlow.Append(instr);
+		    }
+		    else if (tmpObjectVar != null)
+		    {
+			    outFlow.Append(Instruction.Create(OpCodes.Ldloc, tmpObjectVar));
+			    outFlow.Append(Instruction.Create(OpCodes.Unbox_Any, GetReturnedType(originalDef)));
+			    outFlow.Append(Instruction.Create(OpCodes.Stloc, original.InjectedLocals[InjectionType.Result]));
+		    }
+
+		    tmpBoxVars.Do(tmpBoxVar =>
+		    {
+			    outFlow.Append(Instruction.Create(originalIsStatic ? OpCodes.Ldarg_0 : OpCodes.Ldarg_1));
+			    outFlow.Append(Instruction.Create(OpCodes.Ldloc, tmpBoxVar.Key));
+			    outFlow.Append(Instruction.Create(OpCodes.Unbox_Any, tmpBoxVar.Value));
+			    outFlow.Append(Instruction.Create(OpCodes.Stobj, tmpBoxVar.Value));
+		    });
+
+		    if (!EqualTypeRef(fix.Method!.ReturnType, ts.Void))
+		    {
+			    outFlow.Append(Instruction.Create(OpCodes.Stloc, original.InjectedLocals[InjectionType.Exception]));
+			    rethrowPossible = false;
+		    }
+
+		    if (catchExceptions)
+		    {
+			    outFlow.Append(MarkBlock(outFlow, ExceptionBlockType.BeginCatchBlock, module));
+			    outFlow.Append(Instruction.Create(OpCodes.Pop));
+			    outFlow.Append(MarkBlock(outFlow, ExceptionBlockType.EndExceptionBlock, module));
+		    }
+	    });
+
+	    return rethrowPossible;
+    }
+
+    #endregion
+    
+    #region Codegen snippets
+    
+    private List<Instruction> PrepareArgumentArray(MethodDefinition originalDef)
+    {
+	    var result = new List<Instruction>();
+
+	    var body = originalDef.Body;
+	    var module = originalDef.Module;
+	    var originalIsStatic = originalDef.IsStatic;
+	    var parameters = originalDef.Parameters;
+	    if (!originalIsStatic)
+		    parameters = [body.ThisParameter, ..parameters];
+	    var i = 0;
+	    foreach (var pInfo in parameters)
+	    {
+		    if (pInfo.IsOut || pInfo.Attributes.HasFlag(ParameterAttributes.Retval))
+			    result.AddRange(InitializeOutParameter(pInfo, pInfo.ParameterType, module));
+	    }
+
+	    result.Add(Instruction.Create(OpCodes.Ldc_I4, parameters.Count));
+	    result.Add(Instruction.Create(OpCodes.Newarr, module.ImportReference(typeof(object))));
+	    i = 0;
+	    var arrayIdx = 0;
+	    foreach (var pInfo in parameters)
+	    {
+		    var pType = pInfo.ParameterType;
+		    var paramByRef = pType.IsByReference;
+		    if (paramByRef)
+			    pType = pType.GetElementType();
+		    result.Add(Instruction.Create(OpCodes.Dup));
+		    result.Add(Instruction.Create(OpCodes.Ldc_I4, arrayIdx++));
+		    result.Add(Instruction.Create(OpCodes.Ldarg_S, pInfo));
+		    if (paramByRef)
+		    {
+			    if (IsStruct(pType))
+				    result.Add(Instruction.Create(OpCodes.Ldobj, pType));
+			    else
+				    result.Add(LoadIndOpCodeFor(pType, module));
+		    }
+
+		    if (pType.IsValueType)
+			    result.Add(Instruction.Create(OpCodes.Box, pType));
+		    result.Add(Instruction.Create(OpCodes.Stelem_Ref));
+	    }
+
+	    return result;
+    }
+    
+    private List<Instruction> GenerateVariableInit(VariableDefinition variableDef, bool isReturnValue, ModuleDefinition module)
+    {
+	    var result = new List<Instruction>();
+	    
+	    var ts = module.TypeSystem;
+	    var typeRef = variableDef.VariableType;
+
+	    if (typeRef.IsByReference)
+	    {
+		    if (isReturnValue)
+		    {
+			    result.Add(Instruction.Create(OpCodes.Ldc_I4_1));
+			    result.Add(Instruction.Create(OpCodes.Newarr, typeRef.GetElementType()));
+			    result.Add(Instruction.Create(OpCodes.Ldc_I4_0));
+			    result.Add(Instruction.Create(OpCodes.Ldelema, typeRef.GetElementType()));
+			    result.Add(Instruction.Create(OpCodes.Stloc, variableDef));
+			    return result;
+		    }
+		    else
+			    typeRef = typeRef.GetElementType();
+	    }
+
+	    if (typeRef.Resolve().IsEnum)
+	    {
+		    typeRef = typeRef.GetElementType();
+	    }
+
+	    if (IsClass(typeRef))
+	    {
+		    result.Add(Instruction.Create(OpCodes.Ldnull));
+		    result.Add(Instruction.Create(OpCodes.Stloc, variableDef));
+		    return result;
+	    }
+
+	    if (IsStruct(typeRef))
+	    {
+		    result.Add(Instruction.Create(OpCodes.Ldloca, variableDef));
+		    result.Add(Instruction.Create(OpCodes.Initobj, typeRef));
+		    return result;
+	    }
+
+	    if (IsValue(typeRef))
+	    {
+		    if (EqualTypeRef(typeRef, ts.Single))
+			    result.Add(Instruction.Create(OpCodes.Ldc_R4, (float)0));
+		    else if (EqualTypeRef(typeRef, ts.Double))
+			    result.Add(Instruction.Create(OpCodes.Ldc_R8, (double)0));
+		    else if (EqualTypeRef(typeRef, ts.Int64) || EqualTypeRef(typeRef, ts.UInt64))
+			    result.Add(Instruction.Create(OpCodes.Ldc_I8, (long)0));
+		    else
+			    result.Add(Instruction.Create(OpCodes.Ldc_I4, 0));
+		    result.Add(Instruction.Create(OpCodes.Stloc, variableDef));
+		    return result;
+	    }
+
+	    return result;
+    }
+
+    private List<Instruction> InitializeOutParameter(ParameterDefinition paramDef, TypeReference typeRef, ModuleDefinition module)
+    {
+	    var result = new List<Instruction>();
+	    
+	    var ts = module.TypeSystem;
+	    if (typeRef.IsByReference)
+		    typeRef = typeRef.GetElementType();
+	    result.Add(Instruction.Create(OpCodes.Ldarg_S, paramDef));
+	    if (IsStruct(typeRef))
+	    {
+		    result.Add(Instruction.Create(OpCodes.Initobj, typeRef));
+		    return result;
+	    }
+
+	    if (IsValue(typeRef))
+	    {
+		    if (EqualTypeRef(typeRef, ts.Single))
+		    {
+			    result.Add(Instruction.Create(OpCodes.Ldc_R4, (float)0));
+			    result.Add(Instruction.Create(OpCodes.Stind_R4));
+			    return result;
+		    }
+		    else if (EqualTypeRef(typeRef, ts.Double))
+		    {
+			    result.Add(Instruction.Create(OpCodes.Ldc_R8, (double)0));
+			    result.Add(Instruction.Create(OpCodes.Stind_R8));
+			    return result;
+		    }
+		    else if (EqualTypeRef(typeRef, ts.Int64))
+		    {
+			    result.Add(Instruction.Create(OpCodes.Ldc_I8, (long)0));
+			    result.Add(Instruction.Create(OpCodes.Stind_I8));
+			    return result;
+		    }
+		    else
+		    {
+			    result.Add(Instruction.Create(OpCodes.Ldc_I4, 0));
+			    result.Add(Instruction.Create(OpCodes.Stind_I4));
+			    return result;
+		    }
+	    }
+
+	    // class or default
+	    result.Add(Instruction.Create(OpCodes.Ldnull));
+	    result.Add(Instruction.Create(OpCodes.Stind_Ref));
+
+	    return result;
+    }
+
+    private List<Instruction> RestoreArgumentArray(OriginalMethod original)
+    {
+	    var result = new List<Instruction>();
+	    
+	    var originalDef = original.MethodDef;
+	    var module = originalDef.Module;
+	    var body = originalDef.Body;
+	    var originalIsStatic = originalDef.IsStatic;
+	    var parameters = originalDef.Parameters;
+	    if (!originalIsStatic)
+		    parameters = [body.ThisParameter, ..parameters];
+	    var i = 0;
+	    var arrayIdx = 0;
+	    foreach (var pInfo in parameters)
+	    {
+		    var pType = pInfo.ParameterType;
+		    if (pType.IsByReference)
+		    {
+			    pType = pType.GetElementType();
+
+			    result.Add(Instruction.Create(OpCodes.Ldarg_S, pInfo));
+			    result.Add(Instruction.Create(OpCodes.Ldloc, original.InjectedLocals[InjectionType.ArgsArray]));
+			    result.Add(Instruction.Create(OpCodes.Ldc_I4, arrayIdx));
+			    result.Add(Instruction.Create(OpCodes.Ldelem_Ref));
 
 			    if (pType.IsValueType)
-				    result.Add(Instruction.Create(OpCodes.Box, pType));
-			    result.Add(Instruction.Create(OpCodes.Stelem_Ref));
-		    }
-
-		    return result;
-	    }
-	    
-	    List<Instruction> GenerateVariableInit(VariableDefinition variableDef, bool isReturnValue = false)
-	    {
-		    var result = new List<Instruction>();
-		    var typeRef = variableDef.VariableType;
-
-		    if (typeRef.IsByReference)
-		    {
-			    if (isReturnValue)
 			    {
-				    result.Add(Instruction.Create(OpCodes.Ldc_I4_1));
-				    result.Add(Instruction.Create(OpCodes.Newarr, typeRef.GetElementType()));
-				    result.Add(Instruction.Create(OpCodes.Ldc_I4_0));
-				    result.Add(Instruction.Create(OpCodes.Ldelema, typeRef.GetElementType()));
-				    result.Add(Instruction.Create(OpCodes.Stloc, variableDef));
-				    return result;
-			    }
-			    else
-				    typeRef = typeRef.GetElementType();
-		    }
-
-		    if (typeRef.Resolve().IsEnum)
-		    {
-			    typeRef = typeRef.GetElementType();
-		    }
-
-		    if (IsClass(typeRef))
-		    {
-			    result.Add(Instruction.Create(OpCodes.Ldnull));
-			    result.Add(Instruction.Create(OpCodes.Stloc, variableDef));
-			    return result;
-		    }
-
-		    if (IsStruct(typeRef))
-		    {
-			    result.Add(Instruction.Create(OpCodes.Ldloca, variableDef));
-			    result.Add(Instruction.Create(OpCodes.Initobj, typeRef));
-			    return result;
-		    }
-
-		    if (IsValue(typeRef))
-		    {
-			    if (EqualTypeRef(typeRef, ts.Single))
-				    result.Add(Instruction.Create(OpCodes.Ldc_R4, (float)0));
-			    else if (EqualTypeRef(typeRef, ts.Double))
-				    result.Add(Instruction.Create(OpCodes.Ldc_R8, (double)0));
-			    else if (EqualTypeRef(typeRef, ts.Int64) || EqualTypeRef(typeRef, ts.UInt64))
-				    result.Add(Instruction.Create(OpCodes.Ldc_I8, (long)0));
-			    else
-				    result.Add(Instruction.Create(OpCodes.Ldc_I4, 0));
-			    result.Add(Instruction.Create(OpCodes.Stloc, variableDef));
-			    return result;
-		    }
-
-		    return result;
-	    }
-
-	    List<Instruction> InitializeOutParameter(ParameterDefinition paramDef, TypeReference typeRef)
-	    {
-		    var result = new List<Instruction>();
-		    if (typeRef.IsByReference)
-			    typeRef = typeRef.GetElementType();
-		    result.Add(Instruction.Create(OpCodes.Ldarg_S, paramDef));
-		    if (IsStruct(typeRef))
-		    {
-			    result.Add(Instruction.Create(OpCodes.Initobj, typeRef));
-			    return result;
-		    }
-
-		    if (IsValue(typeRef))
-		    {
-			    if (EqualTypeRef(typeRef, ts.Single))
-			    {
-				    result.Add(Instruction.Create(OpCodes.Ldc_R4, (float)0));
-				    result.Add(Instruction.Create(OpCodes.Stind_R4));
-				    return result;
-			    }
-			    else if (EqualTypeRef(typeRef, ts.Double))
-			    {
-				    result.Add(Instruction.Create(OpCodes.Ldc_R8, (double)0));
-				    result.Add(Instruction.Create(OpCodes.Stind_R8));
-				    return result;
-			    }
-			    else if (EqualTypeRef(typeRef, ts.Int64))
-			    {
-				    result.Add(Instruction.Create(OpCodes.Ldc_I8, (long)0));
-				    result.Add(Instruction.Create(OpCodes.Stind_I8));
-				    return result;
-			    }
-			    else
-			    {
-				    result.Add(Instruction.Create(OpCodes.Ldc_I4, 0));
-				    result.Add(Instruction.Create(OpCodes.Stind_I4));
-				    return result;
-			    }
-		    }
-
-		    // class or default
-		    result.Add(Instruction.Create(OpCodes.Ldnull));
-		    result.Add(Instruction.Create(OpCodes.Stind_Ref));
-
-		    return result;
-	    }
-
-	    List<Instruction> RestoreArgumentArray()
-	    {
-		    var result = new List<Instruction>();
-		    var originalIsStatic = originalDef.IsStatic;
-		    var parameters = originalDef.Parameters;
-		    if (!originalIsStatic)
-			    parameters = [body.ThisParameter, ..parameters];
-		    var i = 0;
-		    var arrayIdx = 0;
-		    foreach (var pInfo in parameters)
-		    {
-			    var pType = pInfo.ParameterType;
-			    if (pType.IsByReference)
-			    {
-				    pType = pType.GetElementType();
-
-				    result.Add(Instruction.Create(OpCodes.Ldarg_S, pInfo));
-				    result.Add(Instruction.Create(OpCodes.Ldloc, injectedLocals[InjectionType.ArgsArray]));
-				    result.Add(Instruction.Create(OpCodes.Ldc_I4, arrayIdx));
-				    result.Add(Instruction.Create(OpCodes.Ldelem_Ref));
-
-				    if (pType.IsValueType)
-				    {
-					    result.Add(Instruction.Create(OpCodes.Unbox_Any, pType));
-					    if (IsStruct(pType))
-						    result.Add(Instruction.Create(OpCodes.Stobj, pType));
-					    else
-						    result.Add(StoreIndOpCodeFor(pType));
-				    }
+				    result.Add(Instruction.Create(OpCodes.Unbox_Any, pType));
+				    if (IsStruct(pType))
+					    result.Add(Instruction.Create(OpCodes.Stobj, pType));
 				    else
-				    {
-					    result.Add(Instruction.Create(OpCodes.Castclass, pType));
-					    result.Add(Instruction.Create(OpCodes.Stind_Ref));
-				    }
+					    result.Add(StoreIndOpCodeFor(pType, module));
 			    }
 			    else
 			    {
-				    result.Add(Instruction.Create(OpCodes.Ldloc, injectedLocals[InjectionType.ArgsArray]));
-				    result.Add(Instruction.Create(OpCodes.Ldc_I4, arrayIdx));
-				    result.Add(Instruction.Create(OpCodes.Ldelem_Ref));
-				    if (pType.IsValueType)
-					    result.Add(Instruction.Create(OpCodes.Unbox_Any, pType));
-				    else
-					    result.Add(Instruction.Create(OpCodes.Castclass, pType));
-				    result.Add(Instruction.Create(OpCodes.Starg, pInfo));
+				    result.Add(Instruction.Create(OpCodes.Castclass, pType));
+				    result.Add(Instruction.Create(OpCodes.Stind_Ref));
 			    }
-			    arrayIdx++;
 		    }
-		    return result;
-	    }
-	    
-	    Instruction LoadIndOpCodeFor(TypeReference typeRef)
-	    {
-		    if (primitivesWithObjectTypeCode.Any(x => EqualTypeRef(x, typeRef)))
-			    return Instruction.Create(OpCodes.Ldind_I);
-
-		    return typeRef switch
+		    else
 		    {
-			    _ when EqualTypeRef(typeRef, ts.SByte)     || EqualTypeRef(typeRef, ts.Byte)     || EqualTypeRef(typeRef, ts.Boolean) => Instruction.Create(OpCodes.Ldind_I1),
-			    _ when EqualTypeRef(typeRef, ts.Char)      || EqualTypeRef(typeRef, ts.Int16)    || EqualTypeRef(typeRef, ts.UInt16)  => Instruction.Create(OpCodes.Ldind_I2),
-				_ when EqualTypeRef(typeRef, ts.Int32)     || EqualTypeRef(typeRef, ts.UInt32)   => Instruction.Create(OpCodes.Ldind_I4),
-			    _ when EqualTypeRef(typeRef, ts.Int64)     || EqualTypeRef(typeRef, ts.UInt64)   => Instruction.Create(OpCodes.Ldind_I8),
-			    _ when EqualTypeRef(typeRef, ts.Single)    => Instruction.Create(OpCodes.Ldind_R4),
-			    _ when EqualTypeRef(typeRef, ts.Double)    => Instruction.Create(OpCodes.Ldind_R8),
-			    _ when EqualTypeRef(typeRef, dateTimeType) || EqualTypeRef(typeRef, decimalType) => throw new NotSupportedException(),
-			    _ when EqualTypeRef(typeRef, emptyType)    || EqualTypeRef(typeRef, ts.Object)   || EqualTypeRef(typeRef, dbNullType) || EqualTypeRef(typeRef, ts.String) => Instruction.Create(OpCodes.Ldind_Ref),
-			    _ => Instruction.Create(OpCodes.Ldind_Ref),
-		    };
+			    result.Add(Instruction.Create(OpCodes.Ldloc, original.InjectedLocals[InjectionType.ArgsArray]));
+			    result.Add(Instruction.Create(OpCodes.Ldc_I4, arrayIdx));
+			    result.Add(Instruction.Create(OpCodes.Ldelem_Ref));
+			    if (pType.IsValueType)
+				    result.Add(Instruction.Create(OpCodes.Unbox_Any, pType));
+			    else
+				    result.Add(Instruction.Create(OpCodes.Castclass, pType));
+			    result.Add(Instruction.Create(OpCodes.Starg, pInfo));
+		    }
+		    arrayIdx++;
 	    }
+	    return result;
+    }
+    
+    private HashSet<TypeReference> GetPrimitivesWithObjectTypeCode(TypeSystem ts)
+	    => [ts.IntPtr, ts.UIntPtr];
+
+    private Instruction LoadIndOpCodeFor(TypeReference typeRef, ModuleDefinition module)
+    {
+	    var ts = module.TypeSystem;
 	    
-	    Instruction StoreIndOpCodeFor(TypeReference typeRef)
+	    if (GetPrimitivesWithObjectTypeCode(ts).Any(x => EqualTypeRef(x, typeRef)))
+		    return Instruction.Create(OpCodes.Ldind_I);
+
+	    var dateTimeType = module.ImportReference(typeof(DateTime));
+	    var decimalType = module.ImportReference(typeof(decimal));
+	    var emptyType = module.ImportReference(typeof(void));
+	    var dbNullType = module.ImportReference(typeof(DBNull));
+	    
+	    return typeRef switch
 	    {
-		    if (primitivesWithObjectTypeCode.Contains(typeRef))
-			    return Instruction.Create(OpCodes.Stind_I);
-
-		    return typeRef switch
-		    {
-			    _ when EqualTypeRef(typeRef, ts.SByte)     || EqualTypeRef(typeRef, ts.Byte)     || EqualTypeRef(typeRef, ts.Boolean) => Instruction.Create(OpCodes.Stind_I1),
-			    _ when EqualTypeRef(typeRef, ts.Char)      || EqualTypeRef(typeRef, ts.Int16)    || EqualTypeRef(typeRef, ts.UInt16)  => Instruction.Create(OpCodes.Stind_I2),
-			    _ when EqualTypeRef(typeRef, ts.Int32)     || EqualTypeRef(typeRef, ts.UInt32)   => Instruction.Create(OpCodes.Stind_I4),
-			    _ when EqualTypeRef(typeRef, ts.Int64)     || EqualTypeRef(typeRef, ts.UInt64)   => Instruction.Create(OpCodes.Stind_I8),
-			    _ when EqualTypeRef(typeRef, ts.Single)    => Instruction.Create(OpCodes.Stind_R4),
-			    _ when EqualTypeRef(typeRef, ts.Double)    => Instruction.Create(OpCodes.Stind_R8),
-			    _ when EqualTypeRef(typeRef, dateTimeType) || EqualTypeRef(typeRef, decimalType) => throw new NotSupportedException(),
-			    _ when EqualTypeRef(typeRef, emptyType)    || EqualTypeRef(typeRef, ts.Object)   || EqualTypeRef(typeRef, dbNullType) || EqualTypeRef(typeRef, ts.String) => Instruction.Create(OpCodes.Stind_Ref),
-			    _ => Instruction.Create(OpCodes.Stind_Ref),
-		    };
-	    }
+		    _ when EqualTypeRef(typeRef, ts.SByte)     || EqualTypeRef(typeRef, ts.Byte)     || EqualTypeRef(typeRef, ts.Boolean) => Instruction.Create(OpCodes.Ldind_I1),
+		    _ when EqualTypeRef(typeRef, ts.Char)      || EqualTypeRef(typeRef, ts.Int16)    || EqualTypeRef(typeRef, ts.UInt16)  => Instruction.Create(OpCodes.Ldind_I2),
+			_ when EqualTypeRef(typeRef, ts.Int32)     || EqualTypeRef(typeRef, ts.UInt32)   => Instruction.Create(OpCodes.Ldind_I4),
+		    _ when EqualTypeRef(typeRef, ts.Int64)     || EqualTypeRef(typeRef, ts.UInt64)   => Instruction.Create(OpCodes.Ldind_I8),
+		    _ when EqualTypeRef(typeRef, ts.Single)    => Instruction.Create(OpCodes.Ldind_R4),
+		    _ when EqualTypeRef(typeRef, ts.Double)    => Instruction.Create(OpCodes.Ldind_R8),
+		    _ when EqualTypeRef(typeRef, dateTimeType) || EqualTypeRef(typeRef, decimalType) => throw new NotSupportedException(),
+		    _ when EqualTypeRef(typeRef, emptyType)    || EqualTypeRef(typeRef, ts.Object)   || EqualTypeRef(typeRef, dbNullType) || EqualTypeRef(typeRef, ts.String) => Instruction.Create(OpCodes.Ldind_Ref),
+		    _ => Instruction.Create(OpCodes.Ldind_Ref),
+	    };
+    }
+    
+    Instruction StoreIndOpCodeFor(TypeReference typeRef, ModuleDefinition module)
+    {
+	    var ts = module.TypeSystem;
 	    
-	    bool EmitOriginalBaseMethod(MethodDefinition original, List<Instruction> result)
+	    if (GetPrimitivesWithObjectTypeCode(ts).Contains(typeRef))
+		    return Instruction.Create(OpCodes.Stind_I);
+
+	    var dateTimeType = module.ImportReference(typeof(DateTime));
+	    var decimalType = module.ImportReference(typeof(decimal));
+	    var emptyType = module.ImportReference(typeof(void));
+	    var dbNullType = module.ImportReference(typeof(DBNull));
+
+	    return typeRef switch
 	    {
-			result.Add(Instruction.Create(OpCodes.Ldtoken, original));
+		    _ when EqualTypeRef(typeRef, ts.SByte)     || EqualTypeRef(typeRef, ts.Byte)     || EqualTypeRef(typeRef, ts.Boolean) => Instruction.Create(OpCodes.Stind_I1),
+		    _ when EqualTypeRef(typeRef, ts.Char)      || EqualTypeRef(typeRef, ts.Int16)    || EqualTypeRef(typeRef, ts.UInt16)  => Instruction.Create(OpCodes.Stind_I2),
+		    _ when EqualTypeRef(typeRef, ts.Int32)     || EqualTypeRef(typeRef, ts.UInt32)   => Instruction.Create(OpCodes.Stind_I4),
+		    _ when EqualTypeRef(typeRef, ts.Int64)     || EqualTypeRef(typeRef, ts.UInt64)   => Instruction.Create(OpCodes.Stind_I8),
+		    _ when EqualTypeRef(typeRef, ts.Single)    => Instruction.Create(OpCodes.Stind_R4),
+		    _ when EqualTypeRef(typeRef, ts.Double)    => Instruction.Create(OpCodes.Stind_R8),
+		    _ when EqualTypeRef(typeRef, dateTimeType) || EqualTypeRef(typeRef, decimalType) => throw new NotSupportedException(),
+		    _ when EqualTypeRef(typeRef, emptyType)    || EqualTypeRef(typeRef, ts.Object)   || EqualTypeRef(typeRef, dbNullType) || EqualTypeRef(typeRef, ts.String) => Instruction.Create(OpCodes.Stind_Ref),
+		    _ => Instruction.Create(OpCodes.Stind_Ref),
+	    };
+    }
+    
+    private readonly MethodInfo _getMethodFromHandle1 = typeof(MethodBase).GetMethod("GetMethodFromHandle", [typeof(RuntimeMethodHandle)])!;
+    private readonly MethodInfo _getMethodFromHandle2 = typeof(MethodBase).GetMethod("GetMethodFromHandle", [typeof(RuntimeMethodHandle), typeof(RuntimeTypeHandle)])!;
 
-		    var type = original.DeclaringType;
-		    if (type.IsGenericInstance)
-			    result.Add(Instruction.Create(OpCodes.Ldtoken, type));
-		    result.Add(Instruction.Create(OpCodes.Call, type.IsGenericInstance ? getMethodFromHandle2 : getMethodFromHandle1));
-		    return true;
-	    }
-	    
-	    #endregion
+    bool EmitOriginalBaseMethod(MethodDefinition original, List<Instruction> result)
+    {
+		result.Add(Instruction.Create(OpCodes.Ldtoken, original));
 
-	    #region Type checks
-	    
-	    bool IsStruct(TypeReference? typeRef)
-	    {
-		    if (typeRef == null)
-			    return false;
-		    return typeRef.IsValueType && !IsValue(typeRef) && !IsVoid(typeRef);
-	    }
+	    var type = original.DeclaringType;
+	    var module = original.Module;
+	    if (type.IsGenericInstance)
+		    result.Add(Instruction.Create(OpCodes.Ldtoken, type));
+	    result.Add(Instruction.Create(OpCodes.Call, module.ImportReference(type.IsGenericInstance ? _getMethodFromHandle2 : _getMethodFromHandle1)));
+	    return true;
+    }
+    
+    #endregion
 
-	    bool IsVoid(TypeReference typeRef) => EqualTypeRef(typeRef, ts.Void);
+    #region Type checks
+    
+    bool IsStruct(TypeReference? typeRef)
+    {
+	    if (typeRef == null)
+		    return false;
+	    return typeRef.IsValueType && !IsValue(typeRef) && !IsVoid(typeRef);
+    }
 
-	    bool IsClass(TypeReference? typeRef)
-	    {
-		    if (typeRef == null)
-			    return false;
-		    return !typeRef.IsValueType;
-	    }
+    bool IsVoid(TypeReference typeRef)
+    {
+	    var ts = typeRef.Module.TypeSystem;
+	    return EqualTypeRef(typeRef, ts.Void);
+    }
 
-	    bool IsValue(TypeReference? typeRef)
-	    {
-		    if (typeRef == null)
-			    return false;
-		    return typeRef.IsPrimitive || typeRef.Resolve().IsEnum;
-	    }
-	    
-	    #endregion
-	    
-	    #region Codegen method parameters
-	    
-	    List<Instruction> EmitCallParameter(
-			CompileTimePreludeMethod patch,
-			bool allowFirsParamPassthrough,
-			FieldReference? staticFieldThis,
-			out VariableDefinition? tmpInstanceBoxingVar,
-			out VariableDefinition? tmpObjectVar,
-			out bool refResultUsed,
-			List<KeyValuePair<VariableDefinition, TypeReference>> tmpBoxVars
-		)
+    bool IsClass(TypeReference? typeRef)
+    {
+	    if (typeRef == null)
+		    return false;
+	    return !typeRef.IsValueType;
+    }
+
+    bool IsValue(TypeReference? typeRef)
+    {
+	    if (typeRef == null)
+		    return false;
+	    return typeRef.IsPrimitive || typeRef.Resolve().IsEnum;
+    }
+    
+    #endregion
+    
+    #region Codegen method parameters
+    
+    private List<Instruction> EmitCallParameter(
+		OriginalMethod original,
+	    CompileTimePreludeMethod patch,
+		bool allowFirsParamPassthrough,
+		FieldReference? staticFieldThis,
+		out VariableDefinition? tmpInstanceBoxingVar,
+		out VariableDefinition? tmpObjectVar,
+		out bool refResultUsed,
+		List<KeyValuePair<VariableDefinition, TypeReference>> tmpBoxVars
+	)
+	{
+		tmpInstanceBoxingVar = null;
+		tmpObjectVar = null;
+		refResultUsed = false;
+		var result = new List<Instruction>();
+
+		var originalDef = original.MethodDef;
+		var module = originalDef.Module;
+		var ts = module.TypeSystem;
+		var originalIsStatic = originalDef.IsStatic;
+		var returnType = originalDef.ReturnType;
+		var patchInjections = original.Injections[patch].ToList();
+
+		var isInstance = originalIsStatic is false;
+		var originalParameters = originalDef.Parameters;
+		if (!originalIsStatic)
+			originalParameters = [originalDef.Body.ThisParameter, ..originalParameters];
+		var originalParameterNames = originalParameters.Select(p => p.Name).ToArray();
+		var originalType = originalDef.DeclaringType;
+
+		var patchMethodRef = patch.Method!;
+		var patchMethodDef = patchMethodRef.Resolve();
+		var parameters = patchMethodDef.Parameters.ToList();
+
+		if (allowFirsParamPassthrough && !EqualTypeRef(patchMethodDef.ReturnType, ts.Void) && parameters.Count > 0 && EqualTypeRef(parameters[0].ParameterType, patch.Method!.ReturnType))
 		{
-			tmpInstanceBoxingVar = null;
-			tmpObjectVar = null;
-			refResultUsed = false;
-			var result = new List<Instruction>();
+			patchInjections.RemoveAt(0);
+			parameters.RemoveAt(0);
+		}
 
-			var originalIsStatic = originalDef.IsStatic;
-			var returnType = originalDef.ReturnType;
-			var patchInjections = injections[patch].ToList();
+		if (staticFieldThis != null)
+		{
+			result.Add(Instruction.Create(OpCodes.Ldsfld, staticFieldThis!));
+		}
 
-			var isInstance = originalIsStatic is false;
-			var originalParameters = originalDef.Parameters;
-			if (!originalIsStatic)
-				originalParameters = [originalDef.Body.ThisParameter, ..originalParameters];
-			var originalParameterNames = originalParameters.Select(p => p.Name).ToArray();
-			var originalType = originalDef.DeclaringType;
+		foreach (var injection in patchInjections)
+		{
+			var injectionType = injection.InjectionType;
+			var paramRealName = injection.RealName;
+			var paramType = injection.ParameterDef.ParameterType;
 
-			var patchMethodRef = patch.Method!;
-			var patchMethodDef = patchMethodRef.Resolve();
-			var parameters = patchMethodDef.Parameters.ToList();
-
-			if (allowFirsParamPassthrough && !EqualTypeRef(patchMethodDef.ReturnType, ts.Void) && parameters.Count > 0 && EqualTypeRef(parameters[0].ParameterType, patch.Method!.ReturnType))
+			if (injectionType == InjectionType.OriginalMethod)
 			{
-				patchInjections.RemoveAt(0);
-				parameters.RemoveAt(0);
+				if (EmitOriginalBaseMethod(originalDef, result))
+					continue;
+
+				result.Add(Instruction.Create(OpCodes.Ldnull));
+				continue;
 			}
 
-			if (staticFieldThis != null)
+			if (injectionType == InjectionType.Exception)
 			{
-				result.Add(Instruction.Create(OpCodes.Ldsfld, staticFieldThis!));
-			}
-
-			foreach (var injection in patchInjections)
-			{
-				var injectionType = injection.InjectionType;
-				var paramRealName = injection.RealName;
-				var paramType = injection.ParameterDef.ParameterType;
-
-				if (injectionType == InjectionType.OriginalMethod)
-				{
-					if (EmitOriginalBaseMethod(originalDef, result))
-						continue;
-
+				if (original.ExceptionVariable != null)
+					result.Add(Instruction.Create(OpCodes.Ldloc, original.ExceptionVariable));
+				else
 					result.Add(Instruction.Create(OpCodes.Ldnull));
-					continue;
-				}
+				continue;
+			}
 
-				if (injectionType == InjectionType.Exception)
-				{
-					if (exceptionVariable != null)
-						result.Add(Instruction.Create(OpCodes.Ldloc, exceptionVariable));
-					else
-						result.Add(Instruction.Create(OpCodes.Ldnull));
-					continue;
-				}
+			if (injectionType == InjectionType.RunOriginal)
+			{
+				if (original.RunOriginalVariable != null)
+					result.Add(Instruction.Create(OpCodes.Ldloc, original.RunOriginalVariable));
+				else
+					result.Add(Instruction.Create(OpCodes.Ldc_I4_0));
+				continue;
+			}
 
-				if (injectionType == InjectionType.RunOriginal)
+			if (injectionType == InjectionType.Instance)
+			{
+				if (originalIsStatic)
+					result.Add(Instruction.Create(OpCodes.Ldnull));
+				else
 				{
-					if (runOriginalVariable != null)
-						result.Add(Instruction.Create(OpCodes.Ldloc, runOriginalVariable));
-					else
-						result.Add(Instruction.Create(OpCodes.Ldc_I4_0));
-					continue;
-				}
+					var parameterIsRef = paramType.IsByReference;
+					var parameterIsObject = EqualTypeRef(paramType, ts.Object) || EqualTypeRef(paramType, ts.Object.MakeByReferenceType());
 
-				if (injectionType == InjectionType.Instance)
-				{
-					if (originalIsStatic)
-						result.Add(Instruction.Create(OpCodes.Ldnull));
-					else
+					if (IsStruct(originalType))
 					{
-						var parameterIsRef = paramType.IsByReference;
-						var parameterIsObject = EqualTypeRef(paramType, ts.Object) || EqualTypeRef(paramType, ts.Object.MakeByReferenceType());
-
-						if (IsStruct(originalType))
+						if (parameterIsObject)
 						{
-							if (parameterIsObject)
+							if (parameterIsRef)
 							{
-								if (parameterIsRef)
-								{
-									result.Add(Instruction.Create(OpCodes.Ldarg_0));
-									result.Add(Instruction.Create(OpCodes.Ldobj, originalType));
-									result.Add(Instruction.Create(OpCodes.Box, originalType));
-									tmpInstanceBoxingVar = new VariableDefinition(ts.Object);
-									result.Add(Instruction.Create(OpCodes.Stloc, tmpInstanceBoxingVar));
-									result.Add(Instruction.Create(OpCodes.Ldloca, tmpInstanceBoxingVar));
-								}
-								else
-								{
-									result.Add(Instruction.Create(OpCodes.Ldarg_0));
-									result.Add(Instruction.Create(OpCodes.Ldobj, originalType));
-									result.Add(Instruction.Create(OpCodes.Box, originalType));
-								}
+								result.Add(Instruction.Create(OpCodes.Ldarg_0));
+								result.Add(Instruction.Create(OpCodes.Ldobj, originalType));
+								result.Add(Instruction.Create(OpCodes.Box, originalType));
+								tmpInstanceBoxingVar = new VariableDefinition(ts.Object);
+								result.Add(Instruction.Create(OpCodes.Stloc, tmpInstanceBoxingVar));
+								result.Add(Instruction.Create(OpCodes.Ldloca, tmpInstanceBoxingVar));
 							}
 							else
 							{
-								if (parameterIsRef)
-									result.Add(Instruction.Create(OpCodes.Ldarg_0));
-								else
-								{
-									result.Add(Instruction.Create(OpCodes.Ldarg_0));
-									result.Add(Instruction.Create(OpCodes.Ldobj, originalType));
-								}
+								result.Add(Instruction.Create(OpCodes.Ldarg_0));
+								result.Add(Instruction.Create(OpCodes.Ldobj, originalType));
+								result.Add(Instruction.Create(OpCodes.Box, originalType));
 							}
 						}
 						else
 						{
 							if (parameterIsRef)
-								result.Add(Instruction.Create(OpCodes.Ldarga, originalDef.Body.ThisParameter));
-							else
 								result.Add(Instruction.Create(OpCodes.Ldarg_0));
+							else
+							{
+								result.Add(Instruction.Create(OpCodes.Ldarg_0));
+								result.Add(Instruction.Create(OpCodes.Ldobj, originalType));
+							}
 						}
 					}
-					continue;
-				}
-
-				if (injectionType == InjectionType.ArgsArray)
-				{
-					if (injectedLocals.TryGetValue(InjectionType.ArgsArray, out var argsArrayVar))
-						result.Add(Instruction.Create(OpCodes.Ldloc, argsArrayVar));
-					else
-						result.Add(Instruction.Create(OpCodes.Ldnull));
-					continue;
-				}
-
-				if (paramRealName.StartsWith(INSTANCE_FIELD_PREFIX, StringComparison.Ordinal))
-				{
-					var fieldName = paramRealName.Substring(INSTANCE_FIELD_PREFIX.Length);
-					FieldDefinition? fieldDef;
-					if (fieldName.All(char.IsDigit))
-					{
-						fieldDef = CompileTimeAccessTools.DeclaredField(originalType, int.Parse(fieldName));
-						if (fieldDef is null)
-							throw new ArgumentException($"No field found at given index in class {originalType?.FullName ?? "null"}", fieldName);
-					}
 					else
 					{
-						fieldDef = CompileTimeAccessTools.Field(originalType, fieldName);
-						if (fieldDef is null)
-							throw new ArgumentException($"No such field defined in class {originalType?.FullName ?? "null"}", fieldName);
+						if (parameterIsRef)
+							result.Add(Instruction.Create(OpCodes.Ldarga, originalDef.Body.ThisParameter));
+						else
+							result.Add(Instruction.Create(OpCodes.Ldarg_0));
 					}
-
-					if (fieldDef.IsStatic)
-						result.Add(Instruction.Create(paramType.IsByReference ? OpCodes.Ldsflda : OpCodes.Ldsfld, fieldDef));
-					else
-					{
-						result.Add(Instruction.Create(OpCodes.Ldarg_0));
-						result.Add(Instruction.Create(paramType.IsByReference ? OpCodes.Ldflda : OpCodes.Ldfld, fieldDef));
-					}
-					continue;
 				}
+				continue;
+			}
 
-				if (injectionType == InjectionType.State)
+			if (injectionType == InjectionType.ArgsArray)
+			{
+				if (original.InjectedLocals.TryGetValue(InjectionType.ArgsArray, out var argsArrayVar))
+					result.Add(Instruction.Create(OpCodes.Ldloc, argsArrayVar));
+				else
+					result.Add(Instruction.Create(OpCodes.Ldnull));
+				continue;
+			}
+
+			if (paramRealName.StartsWith(INSTANCE_FIELD_PREFIX, StringComparison.Ordinal))
+			{
+				var fieldName = paramRealName.Substring(INSTANCE_FIELD_PREFIX.Length);
+				FieldDefinition? fieldDef;
+				if (fieldName.All(char.IsDigit))
 				{
-					var ldlocCode = paramType.IsByReference ? OpCodes.Ldloca : OpCodes.Ldloc;
-					if (otherLocals.TryGetValue($"state__{patch.DeclaringType?.FullName ?? "null"}", out var stateVar))
-						result.Add(Instruction.Create(ldlocCode, stateVar));
-					else
-						result.Add(Instruction.Create(OpCodes.Ldnull));
-					continue;
-				}
-
-				if (injectionType == InjectionType.Result)
-				{
-					if (returnType.FullName == typeof(void).FullName)
-						throw new Exception($"Cannot get result from void method {originalDef.FullDescription()}");
-					var resultType = paramType;
-					if (resultType.IsByReference && returnType.IsByReference is false)
-						resultType = resultType.GetElementType();
-					var ldlocCode = paramType.IsByReference && returnType.IsByReference is false ? OpCodes.Ldloca : OpCodes.Ldloc;
-					if (returnType.IsValueType && EqualTypeRef(paramType, ts.Object.MakeByReferenceType()))
-						ldlocCode = OpCodes.Ldloc;
-					result.Add(Instruction.Create(ldlocCode, injectedLocals[InjectionType.Result]));
-					if (returnType.IsValueType)
-					{
-						if (EqualTypeRef(paramType, ts.Object))
-							result.Add(Instruction.Create(OpCodes.Box, returnType));
-						else if (EqualTypeRef(paramType, ts.Object.MakeByReferenceType()))
-						{
-							result.Add(Instruction.Create(OpCodes.Box, returnType));
-							tmpObjectVar = new VariableDefinition(ts.Object);
-							result.Add(Instruction.Create(OpCodes.Stloc, tmpObjectVar));
-							result.Add(Instruction.Create(OpCodes.Ldloca, tmpObjectVar));
-						}
-					}
-					continue;
-				}
-
-				if (injectionType == InjectionType.ResultRef)
-				{
-					if (!returnType.IsByReference)
-						throw new Exception(
-							 $"Cannot use {InjectionType.ResultRef} with non-ref return type {returnType.FullName} of method {originalDef.FullDescription()}");
-
-					var resultType = paramType;
-					var expectedTypeRef = module.ImportReference(typeof(RefResult<>)).MakeGenericInstanceType(returnType.GetElementType()).MakeByReferenceType();
-					if (!EqualTypeRef(resultType, expectedTypeRef))
-						throw new Exception(
-							 $"Wrong type of {InjectedParameter.RESULT_REF_VAR} for method {originalDef.FullDescription()}. Expected {expectedTypeRef.FullName}, got {resultType.FullName}");
-
-					result.Add(Instruction.Create(OpCodes.Ldloca, injectedLocals[InjectionType.ResultRef]));
-
-					refResultUsed = true;
-					continue;
-				}
-
-				if (otherLocals.TryGetValue(paramRealName, out var localBuilder))
-				{
-					var ldlocCode = paramType.IsByReference ? OpCodes.Ldloca : OpCodes.Ldloc;
-					result.Add(Instruction.Create(ldlocCode, localBuilder));
-					continue;
-				}
-
-				int argumentIdx;
-				if (paramRealName.StartsWith(PARAM_INDEX_PREFIX, StringComparison.Ordinal))
-				{
-					var val = paramRealName.Substring(PARAM_INDEX_PREFIX.Length);
-					if (!int.TryParse(val, out argumentIdx))
-						throw new Exception($"Parameter {paramRealName} does not contain a valid index");
-					if (argumentIdx < 0 || argumentIdx >= originalParameters.Count)
-						throw new Exception($"No parameter found at index {argumentIdx}");
+					fieldDef = CompileTimeAccessTools.DeclaredField(originalType, int.Parse(fieldName));
+					if (fieldDef is null)
+						throw new ArgumentException($"No field found at given index in class {originalType?.FullName ?? "null"}", fieldName);
 				}
 				else
 				{
-					argumentIdx = GetArgumentIndex(patch.Method.Resolve(), originalParameterNames, injection.ParameterDef);
-					if (argumentIdx == -1)
+					fieldDef = CompileTimeAccessTools.Field(originalType, fieldName);
+					if (fieldDef is null)
+						throw new ArgumentException($"No such field defined in class {originalType?.FullName ?? "null"}", fieldName);
+				}
+
+				if (fieldDef.IsStatic)
+					result.Add(Instruction.Create(paramType.IsByReference ? OpCodes.Ldsflda : OpCodes.Ldsfld, fieldDef));
+				else
+				{
+					result.Add(Instruction.Create(OpCodes.Ldarg_0));
+					result.Add(Instruction.Create(paramType.IsByReference ? OpCodes.Ldflda : OpCodes.Ldfld, fieldDef));
+				}
+				continue;
+			}
+
+			if (injectionType == InjectionType.State)
+			{
+				var ldlocCode = paramType.IsByReference ? OpCodes.Ldloca : OpCodes.Ldloc;
+				if (original.OtherLocals.TryGetValue($"state__{patch.DeclaringType?.FullName ?? "null"}", out var stateVar))
+					result.Add(Instruction.Create(ldlocCode, stateVar));
+				else
+					result.Add(Instruction.Create(OpCodes.Ldnull));
+				continue;
+			}
+
+			if (injectionType == InjectionType.Result)
+			{
+				if (returnType.FullName == typeof(void).FullName)
+					throw new Exception($"Cannot get result from void method {originalDef.FullDescription()}");
+				var resultType = paramType;
+				if (resultType.IsByReference && returnType.IsByReference is false)
+					resultType = resultType.GetElementType();
+				var ldlocCode = paramType.IsByReference && returnType.IsByReference is false ? OpCodes.Ldloca : OpCodes.Ldloc;
+				if (returnType.IsValueType && EqualTypeRef(paramType, ts.Object.MakeByReferenceType()))
+					ldlocCode = OpCodes.Ldloc;
+				result.Add(Instruction.Create(ldlocCode, original.InjectedLocals[InjectionType.Result]));
+				if (returnType.IsValueType)
+				{
+					if (EqualTypeRef(paramType, ts.Object))
+						result.Add(Instruction.Create(OpCodes.Box, returnType));
+					else if (EqualTypeRef(paramType, ts.Object.MakeByReferenceType()))
 					{
-						var patchMethod = CompileTimePreludeMethod.Merge(CompileTimePreludeMethodUtils.GetFromTypeRef(paramType));
-						patchMethod.MethodType ??= MethodType.Normal;
-						var delegateOriginalRef = patchMethod.GetOriginalMethod();
-						if (delegateOriginalRef != null)
+						result.Add(Instruction.Create(OpCodes.Box, returnType));
+						tmpObjectVar = new VariableDefinition(ts.Object);
+						result.Add(Instruction.Create(OpCodes.Stloc, tmpObjectVar));
+						result.Add(Instruction.Create(OpCodes.Ldloca, tmpObjectVar));
+					}
+				}
+				continue;
+			}
+
+			if (injectionType == InjectionType.ResultRef)
+			{
+				if (!returnType.IsByReference)
+					throw new Exception(
+						 $"Cannot use {InjectionType.ResultRef} with non-ref return type {returnType.FullName} of method {originalDef.FullDescription()}");
+
+				var resultType = paramType;
+				var expectedTypeRef = module.ImportReference(typeof(RefResult<>)).MakeGenericInstanceType(returnType.GetElementType()).MakeByReferenceType();
+				if (!EqualTypeRef(resultType, expectedTypeRef))
+					throw new Exception(
+						 $"Wrong type of {InjectedParameter.RESULT_REF_VAR} for method {originalDef.FullDescription()}. Expected {expectedTypeRef.FullName}, got {resultType.FullName}");
+
+				result.Add(Instruction.Create(OpCodes.Ldloca, original.InjectedLocals[InjectionType.ResultRef]));
+
+				refResultUsed = true;
+				continue;
+			}
+
+			if (original.OtherLocals.TryGetValue(paramRealName, out var localBuilder))
+			{
+				var ldlocCode = paramType.IsByReference ? OpCodes.Ldloca : OpCodes.Ldloc;
+				result.Add(Instruction.Create(ldlocCode, localBuilder));
+				continue;
+			}
+
+			int argumentIdx;
+			if (paramRealName.StartsWith(PARAM_INDEX_PREFIX, StringComparison.Ordinal))
+			{
+				var val = paramRealName.Substring(PARAM_INDEX_PREFIX.Length);
+				if (!int.TryParse(val, out argumentIdx))
+					throw new Exception($"Parameter {paramRealName} does not contain a valid index");
+				if (argumentIdx < 0 || argumentIdx >= originalParameters.Count)
+					throw new Exception($"No parameter found at index {argumentIdx}");
+			}
+			else
+			{
+				argumentIdx = GetArgumentIndex(patch.Method.Resolve(), originalParameterNames, injection.ParameterDef);
+				if (argumentIdx == -1)
+				{
+					var patchMethod = CompileTimePreludeMethod.Merge(CompileTimePreludeMethodUtils.GetFromTypeRef(paramType));
+					patchMethod.MethodType ??= MethodType.Normal;
+					var delegateOriginalRef = patchMethod.GetOriginalMethod();
+					if (delegateOriginalRef != null)
+					{
+						var delegateOriginalDef = delegateOriginalRef.Resolve();
+						var delegateConstructor = CompileTimeAccessTools.DeclaredMethod(paramType, ".ctor", [ts.Object, ts.IntPtr]);
+						if (delegateConstructor is not null)
 						{
-							var delegateOriginalDef = delegateOriginalRef.Resolve();
-							var delegateConstructor = CompileTimeAccessTools.DeclaredMethod(paramType, ".ctor", [ts.Object, ts.IntPtr]);
-							if (delegateConstructor is not null)
+							if (delegateOriginalDef.IsStatic)
+								result.Add(Instruction.Create(OpCodes.Ldnull));
+							else
 							{
-								if (delegateOriginalDef.IsStatic)
-									result.Add(Instruction.Create(OpCodes.Ldnull));
-								else
+								result.Add(Instruction.Create(OpCodes.Ldarg_0));
+								if (originalType != null && originalType.IsValueType)
 								{
-									result.Add(Instruction.Create(OpCodes.Ldarg_0));
-									if (originalType != null && originalType.IsValueType)
-									{
-										result.Add(Instruction.Create(OpCodes.Ldobj, originalType));
-										result.Add(Instruction.Create(OpCodes.Box, originalType));
-									}
+									result.Add(Instruction.Create(OpCodes.Ldobj, originalType));
+									result.Add(Instruction.Create(OpCodes.Box, originalType));
 								}
-
-								if (delegateOriginalDef.IsStatic is false && patchMethod.NonVirtualDelegate is false)
-								{
-									result.Add(Instruction.Create(OpCodes.Dup));
-									result.Add(Instruction.Create(OpCodes.Ldvirtftn, delegateOriginalDef));
-								}
-								else
-									result.Add(Instruction.Create(OpCodes.Ldftn, delegateOriginalDef));
-								result.Add(Instruction.Create(OpCodes.Newobj, delegateConstructor));
-								continue;
 							}
-						}
 
-						throw new Exception($"Parameter \"{paramRealName}\" not found in method {originalDef.FullDescription()}");
-					}
-				}
-
-				var originalParamType = originalParameters[argumentIdx].ParameterType;
-				var originalParamElementType = originalParamType.IsByReference ? originalParamType.GetElementType() : originalParamType;
-				var patchParamType = paramType;
-				var patchParamElementType = patchParamType.IsByReference ? patchParamType.GetElementType() : patchParamType;
-				var originalIsNormal = originalParameters[argumentIdx].IsOut is false && originalParamType.IsByReference is false;
-				var patchIsNormal = injection.ParameterDef.IsOut is false && patchParamType.IsByReference is false;
-				var needsBoxing = originalParamElementType.IsValueType && patchParamElementType.IsValueType is false;
-				var patchArgIndex = argumentIdx + (isInstance && staticFieldThis == null ? 1 : 0);
-				
-				if (originalIsNormal == patchIsNormal)
-				{
-					result.Add(Instruction.Create(OpCodes.Ldarg_S, originalParameters[patchArgIndex]));
-					if (needsBoxing)
-					{
-						if (patchIsNormal)
-							result.Add(Instruction.Create(OpCodes.Box, originalParamElementType));
-						else
-						{
-							result.Add(Instruction.Create(OpCodes.Ldobj, originalParamElementType));
-							result.Add(Instruction.Create(OpCodes.Box, originalParamElementType));
-							var tmpBoxVar = new VariableDefinition(patchParamElementType);
-							result.Add(Instruction.Create(OpCodes.Stloc, tmpBoxVar));
-							result.Add(Instruction.Create(OpCodes.Ldloca_S, tmpBoxVar));
-							tmpBoxVars.Add(new KeyValuePair<VariableDefinition, TypeReference>(tmpBoxVar, originalParamElementType));
+							if (delegateOriginalDef.IsStatic is false && patchMethod.NonVirtualDelegate is false)
+							{
+								result.Add(Instruction.Create(OpCodes.Dup));
+								result.Add(Instruction.Create(OpCodes.Ldvirtftn, delegateOriginalDef));
+							}
+							else
+								result.Add(Instruction.Create(OpCodes.Ldftn, delegateOriginalDef));
+							result.Add(Instruction.Create(OpCodes.Newobj, delegateConstructor));
+							continue;
 						}
 					}
-					continue;
-				}
 
-				if (originalIsNormal && patchIsNormal is false)
+					throw new Exception($"Parameter \"{paramRealName}\" not found in method {originalDef.FullDescription()}");
+				}
+			}
+
+			var originalParamType = originalParameters[argumentIdx].ParameterType;
+			var originalParamElementType = originalParamType.IsByReference ? originalParamType.GetElementType() : originalParamType;
+			var patchParamType = paramType;
+			var patchParamElementType = patchParamType.IsByReference ? patchParamType.GetElementType() : patchParamType;
+			var originalIsNormal = originalParameters[argumentIdx].IsOut is false && originalParamType.IsByReference is false;
+			var patchIsNormal = injection.ParameterDef.IsOut is false && patchParamType.IsByReference is false;
+			var needsBoxing = originalParamElementType.IsValueType && patchParamElementType.IsValueType is false;
+			var patchArgIndex = argumentIdx + (isInstance && staticFieldThis == null ? 1 : 0);
+			
+			if (originalIsNormal == patchIsNormal)
+			{
+				result.Add(Instruction.Create(OpCodes.Ldarg_S, originalParameters[patchArgIndex]));
+				if (needsBoxing)
 				{
-					if (needsBoxing)
+					if (patchIsNormal)
+						result.Add(Instruction.Create(OpCodes.Box, originalParamElementType));
+					else
 					{
-						result.Add(Instruction.Create(OpCodes.Ldarg_S, originalParameters[patchArgIndex]));
+						result.Add(Instruction.Create(OpCodes.Ldobj, originalParamElementType));
 						result.Add(Instruction.Create(OpCodes.Box, originalParamElementType));
 						var tmpBoxVar = new VariableDefinition(patchParamElementType);
 						result.Add(Instruction.Create(OpCodes.Stloc, tmpBoxVar));
 						result.Add(Instruction.Create(OpCodes.Ldloca_S, tmpBoxVar));
+						tmpBoxVars.Add(new KeyValuePair<VariableDefinition, TypeReference>(tmpBoxVar, originalParamElementType));
 					}
-					else
-						result.Add(Instruction.Create(OpCodes.Ldarga, originalParameters[patchArgIndex]));
-					continue;
 				}
+				continue;
+			}
 
-				result.Add(Instruction.Create(OpCodes.Ldarg_S, originalParameters[patchArgIndex]));
+			if (originalIsNormal && patchIsNormal is false)
+			{
 				if (needsBoxing)
 				{
-					result.Add(Instruction.Create(OpCodes.Ldobj, originalParamElementType));
+					result.Add(Instruction.Create(OpCodes.Ldarg_S, originalParameters[patchArgIndex]));
 					result.Add(Instruction.Create(OpCodes.Box, originalParamElementType));
+					var tmpBoxVar = new VariableDefinition(patchParamElementType);
+					result.Add(Instruction.Create(OpCodes.Stloc, tmpBoxVar));
+					result.Add(Instruction.Create(OpCodes.Ldloca_S, tmpBoxVar));
 				}
 				else
-				{
-					if (originalParamElementType.IsValueType)
-						result.Add(Instruction.Create(OpCodes.Ldobj, originalParamElementType));
-					else
-						result.Add(LoadIndOpCodeFor(originalParameters[argumentIdx].ParameterType));
-				}
+					result.Add(Instruction.Create(OpCodes.Ldarga, originalParameters[patchArgIndex]));
+				continue;
 			}
-			return result;
+
+			result.Add(Instruction.Create(OpCodes.Ldarg_S, originalParameters[patchArgIndex]));
+			if (needsBoxing)
+			{
+				result.Add(Instruction.Create(OpCodes.Ldobj, originalParamElementType));
+				result.Add(Instruction.Create(OpCodes.Box, originalParamElementType));
+			}
+			else
+			{
+				if (originalParamElementType.IsValueType)
+					result.Add(Instruction.Create(OpCodes.Ldobj, originalParamElementType));
+				else
+					result.Add(LoadIndOpCodeFor(originalParameters[argumentIdx].ParameterType, module));
+			}
 		}
-	    
-	    IEnumerable<(ParameterDefinition info, string realName)> OriginalParameters(MethodReference methodRef)
+		return result;
+	}
+    
+	private IEnumerable<(ParameterDefinition info, string realName)> OriginalParameters(MethodReference methodRef)
+    {
+	    var methodDef = methodRef.Resolve();
+	    var baseArgs = GetArgumentAttributes(methodRef);
+	    if (methodRef.DeclaringType is not null)
+		    baseArgs = baseArgs.Union(GetArgumentAttributes(methodRef.DeclaringType)).OfType<HarmonyArgument>();
+	    return methodRef.Parameters.Select(p =>
 	    {
-		    var methodDef = methodRef.Resolve();
-		    var baseArgs = GetArgumentAttributes(methodRef);
-		    if (methodRef.DeclaringType is not null)
-			    baseArgs = baseArgs.Union(GetArgumentAttributes(methodRef.DeclaringType)).OfType<HarmonyArgument>();
-		    return methodRef.Parameters.Select(p =>
-		    {
-			    var arg = GetArgumentAttribute(p);
-			    if (arg != null)
-				    return (p, arg.OriginalName ?? p.Name);
-			    return (p, baseArgs.GetRealName(p.Name, null) ?? p.Name);
-		    });
-	    }
+		    var arg = GetArgumentAttribute(p);
+		    if (arg != null)
+			    return (p, arg.OriginalName ?? p.Name);
+		    return (p, baseArgs.GetRealName(p.Name, null) ?? p.Name);
+	    });
+    }
+    
+    private bool AffectsOriginal(OriginalMethod original, CompileTimePreludeMethod fix)
+    {
+	    var ts = original.MethodDef.Module.TypeSystem;
 	    
-	    bool AffectsOriginal(CompileTimePreludeMethod fix)
+	    if (EqualTypeRef(fix.Method!.ReturnType, ts.Boolean))
+		    return true;
+
+	    if (original.Injections.TryGetValue(fix, out var injectedParameters) == false)
+		    return false;
+
+	    return injectedParameters.Any(parameter =>
 	    {
-		    if (EqualTypeRef(fix.Method!.ReturnType, ts.Boolean))
+		    if (parameter.InjectionType == InjectionType.Instance)
+			    return false;
+		    if (parameter.InjectionType == InjectionType.OriginalMethod)
+			    return false;
+		    if (parameter.InjectionType == InjectionType.State)
+			    return false;
+
+		    var p = parameter.ParameterDef;
+		    if (p.IsOut || p.Attributes.HasFlag(ParameterAttributes.Retval))
+			    return true;
+		    var typeRef = p.ParameterType;
+		    if (typeRef.IsByReference)
+			    return true;
+		    if (IsValue(typeRef) is false && IsStruct(typeRef) is false)
 			    return true;
 
-		    if (injections.TryGetValue(fix, out var injectedParameters) == false)
-			    return false;
-
-		    return injectedParameters.Any(parameter =>
-		    {
-			    if (parameter.InjectionType == InjectionType.Instance)
-				    return false;
-			    if (parameter.InjectionType == InjectionType.OriginalMethod)
-				    return false;
-			    if (parameter.InjectionType == InjectionType.State)
-				    return false;
-
-			    var p = parameter.ParameterDef;
-			    if (p.IsOut || p.Attributes.HasFlag(ParameterAttributes.Retval))
-				    return true;
-			    var typeRef = p.ParameterType;
-			    if (typeRef.IsByReference)
-				    return true;
-			    if (IsValue(typeRef) is false && IsStruct(typeRef) is false)
-				    return true;
-
-			    return false;
-		    });
-	    }
-	    
-	    #endregion
-	    
-	    #region Codegen exceptions
-	    
-	    List<Instruction> FaultRewrite(List<Instruction> originalInstructions)
-	    {
-		    if (originalInstructions is null) throw new ArgumentNullException(nameof(originalInstructions));
-
-		    var i = 0;
-		    var rewritten = new List<Instruction>(originalInstructions.Count * 2);
-		    while (i < originalInstructions.Count)
-		    {
-			    var cur = originalInstructions[i];
-
-			    if (HasBlock(cur, ExceptionBlockType.BeginFaultBlock) == false)
-			    {
-				    var newInstr = CopyInstr(cur);
-				    rewritten.Add(newInstr);
-				    ++i;
-				    continue;
-			    }
-
-			    var beginExceptionIdx = FindMatchingBeginException(rewritten);
-			    var endExceptionIdx = FindMatchingEndException(originalInstructions, i + 1);
-
-			    if (beginExceptionIdx < 0 || endExceptionIdx < 0)
-				    throw new InvalidOperationException("Unbalanced exception markers – cannot rewrite.");
-
-			    // var faultBody = new List<Instruction>();
-			    // for (var k = i; k < endExceptionIdx; ++k)
-				//     faultBody.Add(CloneWithoutFaultMarker(originalInstructions[k]));
-
-			    i = endExceptionIdx + 1;
-
-			    var failedLocal = new VariableDefinition(ts.Boolean);
-			    var skipFault = Instruction.Create(OpCodes.Nop);
-
-				var excTypeRef = module.ImportReference(typeof(Exception));
-			    rewritten.Add(NopWithBlocks(new CompileTimeExceptionBlock(ExceptionBlockType.BeginCatchBlock, excTypeRef)));
-			    rewritten.Add(Instruction.Create(OpCodes.Pop));
-			    rewritten.Add(Instruction.Create(OpCodes.Ldc_I4_1));
-			    rewritten.Add(Instruction.Create(OpCodes.Stloc, failedLocal.Index));
-			    rewritten.Add(Instruction.Create(OpCodes.Rethrow));
-			    rewritten.Add(NopWithBlocks(new CompileTimeExceptionBlock(ExceptionBlockType.BeginFinallyBlock)));
-			    rewritten.Add(Instruction.Create(OpCodes.Ldloc, failedLocal.Index));
-			    rewritten.Add(Instruction.Create(OpCodes.Brfalse_S, skipFault));
-			    rewritten.Add(NopWithLabels(skipFault));
-			    rewritten.Add(NopWithBlocks(new CompileTimeExceptionBlock(ExceptionBlockType.EndExceptionBlock)));
-		    }
-
-		    return rewritten;
-	    }
-	    
-	    Instruction CloneWithoutFaultMarker(Instruction instr)
-	    {
-		    var copy = Instruction.Create(instr.OpCode);
-		    copy.Operand = instr.Operand;
-		    if (labels.TryGetValue(instr, out var instrLabels))
-			    labels.Add(copy, [..instrLabels]);
-		    if (blocks.TryGetValue(instr, out var instrBlocks))
-			    blocks.Add(copy, [..instrBlocks.Where(b => b.BlockType != ExceptionBlockType.BeginFaultBlock)]);
-		    return copy;
-	    }
-	    
-	    int FindMatchingBeginException(List<Instruction> rewritten)
-	    {
-		    for (int j = rewritten.Count - 1, depth = 0; j >= 0; --j)
-		    {
-			    if (HasBlock(rewritten[j], ExceptionBlockType.EndExceptionBlock)) ++depth;
-			    if (HasBlock(rewritten[j], ExceptionBlockType.BeginExceptionBlock))
-			    {
-				    if (depth == 0) return j;
-				    --depth;
-			    }
-		    }
-		    return -1;
-	    }
-
-	    int FindMatchingEndException(List<Instruction> source, int start)
-	    {
-		    for (int j = start, depth = 0; j < source.Count; ++j)
-		    {
-			    if (HasBlock(source[j], ExceptionBlockType.BeginExceptionBlock)) ++depth;
-			    if (HasBlock(source[j], ExceptionBlockType.EndExceptionBlock))
-			    {
-				    if (depth == 0) return j;
-				    --depth;
-			    }
-		    }
-		    return -1;
-	    }
-
-	    Instruction CopyInstr(Instruction instr)
-	    {
-		    var newInstr = instr.GetPrototype();
-		    
-		    if (blocks.TryGetValue(instr, out var instrBlocks))
-			    blocks.Add(newInstr, [..instrBlocks]);
-		    if (labels.TryGetValue(instr, out var instrLabels))
-			    labels.Add(newInstr, [..instrLabels]);
-		    return newInstr;
-	    }
-	    
-	    #endregion
-	    
-	    #region Block
-
-	    Instruction MarkBlock(ExceptionBlockType blockType)
-	    {
-		    var instr = Instruction.Create(OpCodes.Nop);
-		    var excTypeRef = module.ImportReference(typeof(Exception));
-		    blocks.Add(instr, [new CompileTimeExceptionBlock(blockType, excTypeRef)]);
-		    return instr;
-	    }
-	    
-	    bool HasBlock(Instruction instr, ExceptionBlockType type)
-		    => blocks.TryGetValue(instr, out var instrBlocks) && instrBlocks.Any(block => block.BlockType == type);
-
-	    Instruction WithBlocks(Instruction instr, params CompileTimeExceptionBlock[] instrBlocks)
-	    {
-		    if (!blocks.TryGetValue(instr, out var value))
-		    {
-			    value = [];
-		    }
-		    value.AddRange(instrBlocks);
-		    blocks.Add(instr, value);
-		    return instr;
-	    }
-
-	    Instruction NopWithBlocks(params CompileTimeExceptionBlock[] instrBlocks)
-	    {
-		    var nop = Instruction.Create(OpCodes.Nop);
-		    return WithBlocks(nop, instrBlocks);
-	    }
-	    
-	    #endregion
-
-	    #region Labels
-	    
-	    Instruction WithLabels(Instruction instr, params Instruction[] instrLabels)
-	    {
-		    if (!labels.TryGetValue(instr, out var value))
-		    {
-			    value = [];
-		    }
-		    value.AddRange(instrLabels);
-		    labels.Add(instr, value);
-		    return instr;
-	    }
-	    
-	    Instruction NopWithLabels(params Instruction[] instrLabels)
-	    {
-		    var nop = Instruction.Create(OpCodes.Nop);
-		    return WithLabels(nop, instrLabels);
-	    }
-	    
-	    Instruction NopWithLabelList(List<Instruction> instrLabels)
-	    {
-		    var instr = Instruction.Create(OpCodes.Nop);
-		    labels.Add(instr, instrLabels);
-		    return instr;
-	    }
-	    
-	    #endregion
-	    
-	    bool AnyFixHas(InjectionType type)
-		    => injections.Values.SelectMany(list => list).Any(pair => pair.InjectionType == type);
-    
-	    IEnumerable<InjectedParameter> InjectionsFor(CompileTimePreludeMethod fix, InjectionType type = InjectionType.Unknown)
-	    {
-		    if (injections.TryGetValue(fix, out var list))
-		    {
-			    if (type != InjectionType.Unknown)
-				    return list.Where(pair => pair.InjectionType == type);
-			    return list;
-		    }
-		    return [];
-	    }
-
-	    bool EqualTypeRef(TypeReference x, TypeReference y)
-		    => _typeRefComparer.Equals(x, y);
+		    return false;
+	    });
     }
+    
+    #endregion
+    
+    #region Codegen exceptions
+    
+    CecilFlowHelper FaultRewrite(CecilFlowHelper inFlow, ModuleDefinition module)
+    {
+	    var ts = module.TypeSystem;
+	    var originalInstructions = inFlow.Instructions;
+
+	    var outFlow = new CecilFlowHelper();
+	    
+	    var i = 0;
+	    while (i < originalInstructions.Count)
+	    {
+		    var cur = originalInstructions[i];
+
+		    if (HasBlock(inFlow, cur, ExceptionBlockType.BeginFaultBlock) == false)
+		    {
+			    var newInstr = CopyInstrWithFlow(outFlow, inFlow, cur);
+			    outFlow.Append(newInstr);
+			    ++i;
+			    continue;
+		    }
+
+		    var beginExceptionIdx = FindMatchingBeginException(outFlow);
+		    var endExceptionIdx = FindMatchingEndException(inFlow, i + 1);
+
+		    if (beginExceptionIdx < 0 || endExceptionIdx < 0)
+			    throw new InvalidOperationException("Unbalanced exception markers – cannot rewrite.");
+
+		    // var faultBody = new List<Instruction>();
+		    // for (var k = i; k < endExceptionIdx; ++k)
+			//     faultBody.Add(CloneWithoutFaultMarker(originalInstructions[k]));
+
+		    i = endExceptionIdx + 1;
+
+		    var failedLocal = new VariableDefinition(ts.Boolean);
+		    var skipFault = outFlow.DefineLabel();
+
+			var excTypeRef = module.ImportReference(typeof(Exception));
+		    outFlow.Append(NopWithBlocks(outFlow, new CecilExceptionBlock(ExceptionBlockType.BeginCatchBlock, excTypeRef)));
+		    outFlow.Append(Instruction.Create(OpCodes.Pop));
+		    outFlow.Append(Instruction.Create(OpCodes.Ldc_I4_1));
+		    outFlow.Append(Instruction.Create(OpCodes.Stloc, failedLocal.Index));
+		    outFlow.Append(Instruction.Create(OpCodes.Rethrow));
+		    outFlow.Append(NopWithBlocks(outFlow, new CecilExceptionBlock(ExceptionBlockType.BeginFinallyBlock)));
+		    outFlow.Append(Instruction.Create(OpCodes.Ldloc, failedLocal.Index));
+		    outFlow.Append(Instruction.Create(OpCodes.Brfalse_S, skipFault.Instruction));
+		    outFlow.Append(NopWithLabels(outFlow, skipFault));
+		    outFlow.Append(NopWithBlocks(outFlow, new CecilExceptionBlock(ExceptionBlockType.EndExceptionBlock)));
+	    }
+
+	    return outFlow;
+    }
+    
+    Instruction CloneWithoutFaultMarker(CecilFlowHelper outFlow, CecilFlowHelper inFlow, Instruction instr)
+    {
+	    var copy = Instruction.Create(instr.OpCode);
+	    copy.Operand = instr.Operand;
+	    if (inFlow.TryGetLabels(instr, out var instrLabels))
+		    outFlow.AddLabels(copy, [..instrLabels]);
+	    if (inFlow.TryGetBlocks(instr, out var instrBlocks))
+		    outFlow.AddBlocks(copy, [..instrBlocks.Where(b => b.BlockType != ExceptionBlockType.BeginFaultBlock)]);
+	    return copy;
+    }
+    
+    int FindMatchingBeginException(CecilFlowHelper flow)
+    {
+	    var instructions = flow.Instructions;
+	    for (int j = instructions.Count - 1, depth = 0; j >= 0; --j)
+	    {
+		    if (HasBlock(flow, instructions[j], ExceptionBlockType.EndExceptionBlock)) ++depth;
+		    if (HasBlock(flow, instructions[j], ExceptionBlockType.BeginExceptionBlock))
+		    {
+			    if (depth == 0) return j;
+			    --depth;
+		    }
+	    }
+	    return -1;
+    }
+
+    int FindMatchingEndException(CecilFlowHelper flow, int start)
+    {
+	    var instructions = flow.Instructions;
+	    for (int j = start, depth = 0; j < instructions.Count; ++j)
+	    {
+		    if (HasBlock(flow, instructions[j], ExceptionBlockType.BeginExceptionBlock)) ++depth;
+		    if (HasBlock(flow, instructions[j], ExceptionBlockType.EndExceptionBlock))
+		    {
+			    if (depth == 0) return j;
+			    --depth;
+		    }
+	    }
+	    return -1;
+    }
+
+    private Instruction CopyInstrWithoutFlow(Instruction instr)
+	    => instr.GetPrototype();
+
+    private Instruction CopyInstrWithFlow(CecilFlowHelper outFlow, CecilFlowHelper inFlow, Instruction instr)
+    {
+	    var newInstr = instr.GetPrototype();
+	    
+	    if (inFlow.TryGetBlocks(instr, out var instrBlocks))
+		    outFlow.AddBlocks(newInstr, [..instrBlocks]);
+	    if (inFlow.TryGetLabels(instr, out var instrLabels))
+		    outFlow.AddLabels(newInstr, [..instrLabels]);
+	    return newInstr;
+    }
+    
+    #endregion
+    
+    #region Block
+
+    private Instruction MarkBlock(CecilFlowHelper flow, ExceptionBlockType blockType, ModuleDefinition module)
+    {
+	    var instr = Instruction.Create(OpCodes.Nop);
+	    var excTypeRef = module.ImportReference(typeof(Exception));
+	    flow.AddBlock(instr, new CecilExceptionBlock(blockType, excTypeRef));
+	    return instr;
+    }
+    
+    bool HasBlock(CecilFlowHelper flow, Instruction instr, ExceptionBlockType type)
+	    => flow.TryGetBlocks(instr, out var instrBlocks) && instrBlocks.Any(block => block.BlockType == type);
+
+    Instruction WithBlocks(CecilFlowHelper flow, Instruction instr, params CecilExceptionBlock[] blocks)
+    {
+	    flow.AddBlocks(instr, blocks);
+	    return instr;
+    }
+
+    Instruction NopWithBlocks(CecilFlowHelper flow, params CecilExceptionBlock[] instrBlocks)
+    {
+	    var nop = Instruction.Create(OpCodes.Nop);
+	    return WithBlocks(flow, nop, instrBlocks);
+    }
+    
+    #endregion
+
+    #region Labels
+    
+    private Instruction WithLabels(CecilFlowHelper flow, Instruction instr, params CecilLabel[] labels)
+    {
+	    flow.AddLabels(instr, labels);
+	    return instr;
+    }
+    
+    private Instruction NopWithLabels(CecilFlowHelper flow, params CecilLabel[] labels)
+    {
+	    var nop = Instruction.Create(OpCodes.Nop);
+	    return WithLabels(flow, nop, labels);
+    }
+    
+    private Instruction NopWithLabels(CecilFlowHelper flow, List<CecilLabel> labels)
+    {
+	    var instr = Instruction.Create(OpCodes.Nop);
+	    flow.AddLabels(instr, labels);
+	    return instr;
+    }
+    
+    #endregion
+    
+    private bool AnyFixHas(OriginalMethod original, InjectionType type)
+	    => original.Injections.Values.SelectMany(list => list).Any(pair => pair.InjectionType == type);
+
+    private IEnumerable<InjectedParameter> InjectionsFor(OriginalMethod original, CompileTimePreludeMethod fix, InjectionType type = InjectionType.Unknown)
+    {
+	    if (original.Injections.TryGetValue(fix, out var list))
+	    {
+		    if (type != InjectionType.Unknown)
+			    return list.Where(pair => pair.InjectionType == type);
+		    return list;
+	    }
+	    return [];
+    }
+
+    bool EqualTypeRef(TypeReference x, TypeReference y)
+	    => _typeRefComparer.Equals(x, y);
 
     public void Commit(ICompileTimePatchRegistry registry)
     {

@@ -3,7 +3,7 @@ using Mono.Cecil.Cil;
 
 namespace PreludeLib.CompileTime.Utils;
 
-public class CecilExceptionHelper
+public class CecilEmitExceptionHelper
 {
     private class LabelledExceptionHandler
     {
@@ -18,17 +18,17 @@ public class CecilExceptionHelper
     
     private class ExceptionHandlerChain
     {
-        private readonly CecilExceptionHelper _owner;
+        private readonly CecilEmitExceptionHelper _owner;
         private readonly ILProcessor _il;
 
         private readonly Instruction _Start;
         public readonly Instruction SkipAll;
-        private Instruction _SkipHandler;
+        private Instruction? _SkipHandler;
 
         private LabelledExceptionHandler? _Prev;
         private LabelledExceptionHandler? _Handler;
 
-        public ExceptionHandlerChain(CecilExceptionHelper owner)
+        public ExceptionHandlerChain(CecilEmitExceptionHelper owner)
         {
             _owner = owner;
             _il = owner._il;
@@ -107,7 +107,7 @@ public class CecilExceptionHelper
     private ILProcessor _il;
     private readonly Stack<ExceptionHandlerChain> _ExceptionHandlers = new Stack<ExceptionHandlerChain>();
 
-    public CecilExceptionHelper(ILProcessor il)
+    public CecilEmitExceptionHelper(ILProcessor il)
     {
         _il = il;
     }
