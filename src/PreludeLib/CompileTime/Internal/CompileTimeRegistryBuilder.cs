@@ -1,4 +1,5 @@
 ﻿using HarmonyLib;
+using Microsoft.Extensions.Logging;
 using Mono.Cecil;
 using PreludeLib.CompileTime.Public;
 using PreludeLib.CompileTime.Registry;
@@ -6,7 +7,7 @@ using PreludeLib.CompileTime.Utils;
 
 namespace PreludeLib.CompileTime.Internal;
 
-internal class CompileTimeRegistryBuilder(ICompileTimePatchRegistry registry) : ICompileTimeRegistryBuilder
+internal class CompileTimeRegistryBuilder(ICompileTimePatchRegistry registry, ILogger logger) : ICompileTimeRegistryBuilder
 {
     public void ScanAndPatchAll(AssemblyDefinition patchAssemblyDef)
     {
@@ -58,21 +59,24 @@ internal class CompileTimeRegistryBuilder(ICompileTimePatchRegistry registry) : 
         foreach (var auxMethodName in _auxiliaryMethodNames)
         {
             if (containerTypeDef.Methods.Any(m => m.Name == auxMethodName))
-                throw new ArgumentException($"Auxiliary methods are not supported in compile-time patching: {auxMethodName} in {containerTypeDef.FullName}");
+            {
+                logger.LogWarning("Auxiliary methods are not supported in compile-time patching: {AuxMethod} in {ContainerType}", auxMethodName, containerTypeDef.FullName);
+                // throw new ArgumentException($"Auxiliary methods are not supported in compile-time patching: {auxMethodName} in {containerTypeDef.FullName}");
+            }
         }
-
-        var patches = CompileTimePreludeCecilUtils.GetPatches(containerTypeDef.Module, containerTypeDef);
-        foreach (var patch in patches)
+        
+        var patchMethods = CompileTimePreludeCecilUtils.GetPatchMethods(containerTypeDef);
+        foreach (var patchMethod in patchMethods)
         {
-            var methodRef = patch.PatchMethod?.Method;
-            patch.PatchMethod = containerAttrs.Merge(patch.PatchMethod);
-            patch.PatchMethod.Method = methodRef;
-
-            var original = patch.PatchMethod.GetOriginalMethod();
+            var method = patchMethod.PatchMethod.Method;
+            patchMethod.PatchMethod = containerAttrs.Merge(patchMethod.PatchMethod);
+            patchMethod.PatchMethod.Method = method;
+            
+            var original = patchMethod.PatchMethod.GetOriginalMethod();
             if (original == null)
                 continue;
             
-            Patch(original, patch);
+            Patch(original, patchMethod);
         }
     }
     

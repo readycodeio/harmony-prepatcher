@@ -1,4 +1,6 @@
-﻿using Mono.Cecil;
+﻿using HarmonyLib;
+using Mono.Cecil;
+using PreludeLib.CompileTime.Utils;
 
 namespace PreludeLib.CompileTime.Backend.WeaverCallback;
 
@@ -26,10 +28,10 @@ public class InjectedParameter
 
     private string CalculateRealName(MethodDefinition methodDef)
     {
-        var baseArgs = methodDef.GetArgumentAttributes();
+        var baseArgs = CompileTimePreludeCecilUtils.GetArgumentAttributes(methodDef);
         if (methodDef.DeclaringType is not null)
-            baseArgs = baseArgs.Union(methodDef.DeclaringType.GetArgumentAttributes());
-        var arg = ParameterDef.GetArgumentAttribute();
+            baseArgs = baseArgs.Union(CompileTimePreludeCecilUtils.GetArgumentAttributes(methodDef.DeclaringType));
+        var arg = CompileTimePreludeCecilUtils.GetArgumentAttribute(ParameterDef);
         if (arg != null)
             return arg.OriginalName ?? ParameterDef.Name;
         return baseArgs.GetRealName(ParameterDef.Name, null) ?? ParameterDef.Name;

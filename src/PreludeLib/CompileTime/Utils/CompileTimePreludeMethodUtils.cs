@@ -60,7 +60,7 @@ public static class CompileTimePreludeMethodUtils
         while (t != null)
         {
             allAttributes.AddRange(t.CustomAttributes);
-            t = t.BaseType.Resolve();
+            t = t.BaseType?.Resolve();
         }
         
         return [.. allAttributes
@@ -71,15 +71,78 @@ public static class CompileTimePreludeMethodUtils
     public static List<CompileTimePreludeMethod> GetFromTypeRef(TypeReference typeRef)
         => GetFromTypeDef(typeRef.Resolve());
     
-    static CompileTimePreludeMethod? GetPreludeMethodInfo(object attribute)
+    public static CompileTimePreludeMethod? GetPreludeMethodInfo(CustomAttribute customAttr)
     {
-        var f_info = attribute.GetType().GetField(nameof(HarmonyAttribute.info), AccessTools.all);
+	    var t = customAttr.AttributeType;
+	    var isHarmonyAttr = false;
+	    while (t is not null)
+	    {
+		    if (t.FullName == typeof(HarmonyAttribute).FullName)
+		    {
+			    isHarmonyAttr = true;
+			    break;
+		    }
+		    t = t.Resolve()?.BaseType;
+	    }
+	    
+	    if (!isHarmonyAttr)
+		    return null;
+	    
+	    var attributeType = typeof(Harmony).Assembly.GetType(customAttr.AttributeType.FullName)!;
+
+	    Type ParseType(TypeReference typeRef)
+	    {
+		    var asm = Assembly.Load(typeRef.Resolve().Module.Assembly.FullName);
+		    var type = asm.GetType(typeRef.FullName)!;
+		    return type;
+	    }
+	    
+	    object ParseArg(object inputArg, Type type)
+	    {
+		    if (inputArg is CustomAttributeArgument[] inputArr)
+		    {
+			    var elemType = type.GetElementType();
+			    var arr = Array.CreateInstance(elemType!, inputArr.Length);
+			    for (var i = 0; i < arr.Length; i++)
+			    {
+				    var elem = ParseArg(inputArr[i].Value, elemType!);
+				    arr.SetValue(elem, i);
+			    }
+			    return arr;
+		    }
+		    else if (inputArg is CustomAttributeArgument attr)
+		    {
+			    var inputType = ParseType(attr.Type);
+			    var val = ParseArg(attr.Value, inputType);
+			    return val;
+		    }
+		    else if (inputArg is TypeReference typeRef)
+		    {
+			    return ParseType(typeRef);
+		    }
+		    else
+		    {
+			    var val = inputArg;
+			    
+			    if (type.IsEnum)
+			    {
+				    val = Enum.ToObject(type, val);
+			    }
+
+			    return val;
+		    }
+	    }
+	    
+	    var args = customAttr.ConstructorArguments.Select(x => ParseArg(x.Value, ParseType(x.Type))).ToArray();
+	    var attributeValue = Activator.CreateInstance(attributeType, args)!;
+	    
+        var f_info = attributeValue.GetType().GetField(nameof(HarmonyAttribute.info), AccessTools.all);
         if (f_info is null)
             return null;
-        if (f_info.FieldType.FullName != nameof(HarmonyMethod))
+        if (f_info.FieldType.FullName != typeof(HarmonyMethod).FullName)
             return null;
-        var info = f_info.GetValue(attribute);
-        return AccessTools.MakeDeepCopy<CompileTimePreludeMethod>(info);
+        var info = f_info.GetValue(attributeValue);
+        return new CompileTimePreludeMethod(customAttr.AttributeType.Module, (HarmonyMethod)info!);
     }
     
 	public static MethodReference? GetOriginalMethod(this CompileTimePreludeMethod patchMethod)

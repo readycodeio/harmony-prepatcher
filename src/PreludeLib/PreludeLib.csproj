@@ -9,12 +9,12 @@
     <ItemGroup>
         <PackageReference Include="Microsoft.Bcl.AsyncInterfaces" Version="9.0.8" />
         <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.8" />
-        <PackageReference Include="Mono.Cecil" Version="0.11.5" />
         <PackageReference Include="System.Reflection.Emit.Lightweight" Version="4.7.0" />
     </ItemGroup>
 
     <ItemGroup>
         <ProjectReference Include="..\..\src\Harmony\Lib.Harmony\Lib.Harmony.csproj" />
+        <ProjectReference Include="..\Harmony\LocalMonoMod\src\MonoMod.Utils\MonoMod.Utils.csproj" />
     </ItemGroup>
 
 </Project>

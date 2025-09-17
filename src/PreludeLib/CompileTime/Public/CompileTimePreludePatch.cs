@@ -27,10 +27,12 @@ public class CompileTimePreludePatch(HarmonyPatchType patchType, CompileTimePrel
 
         var allAttributes = patchMethodDef.CustomAttributes.ToList();
         var p = patchMethodDef;
-        while (p != null)
+        while (true)
         {
-            allAttributes.AddRange(p.CustomAttributes);
-            p = p.GetBaseMethod();
+            var q = p.GetBaseMethod();
+            if (p == q)
+                break;
+            allAttributes.AddRange(q.CustomAttributes);
         }
         
         var methodName = patchMethodDef.Name;
@@ -39,16 +41,11 @@ public class CompileTimePreludePatch(HarmonyPatchType patchType, CompileTimePrel
             return null;
 
         if (type != HarmonyPatchType.ReversePatch && patchMethodDef.IsStatic is false)
-            throw new ArgumentException("Patch method " + patchMethodDef.FullDescription() + " must be static");
+            throw new ArgumentException($"Patch method {patchMethodDef.FullDescription()} must be static");
 
         var list = allAttributes
-            .Where(attr => attr.GetType().BaseType?.FullName == typeof(HarmonyAttribute).FullName)
-            .Select(attr =>
-            {
-                var f_info = AccessTools.Field(attr.GetType(), nameof(HarmonyAttribute.info));
-                return f_info.GetValue(attr);
-            })
-            .Select(AccessTools.MakeDeepCopy<CompileTimePreludeMethod>)
+            .Where(attr => attr.AttributeType.Resolve().BaseType?.FullName == typeof(HarmonyAttribute).FullName)
+            .Select(CompileTimePreludeMethodUtils.GetPreludeMethodInfo)
             .ToList();
         var info = CompileTimePreludeMethod.Merge(list);
         info.Method = patchMethodDef;

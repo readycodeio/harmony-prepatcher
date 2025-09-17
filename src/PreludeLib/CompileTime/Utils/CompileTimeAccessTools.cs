@@ -30,8 +30,6 @@ public static class CompileTimeAccessTools
             {
                 if (x.Name != name)
                     return false;
-                if (x.Parameters.Count != 0)
-                    return false;
                 return true;
             });
         else
@@ -231,8 +229,6 @@ public static class CompileTimeAccessTools
             result = FindIncludingBaseTypes(typeDef, t => t.Methods.FirstOrDefault(x =>
             {
                 if (x.Name != name)
-                    return false;
-                if (x.Parameters.Count != 0)
                     return false;
                 return true;
             }));

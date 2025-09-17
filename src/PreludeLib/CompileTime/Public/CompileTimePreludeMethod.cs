@@ -6,6 +6,7 @@ namespace PreludeLib.CompileTime.Public;
 
 public class CompileTimePreludeMethod
 {
+	public FieldReference? StaticFieldInstance;
 	public MethodReference? Method;
 	public readonly string? Category = null;
 	public readonly TypeReference? DeclaringType;
@@ -31,18 +32,38 @@ public class CompileTimePreludeMethod
 	
 	public CompileTimePreludeMethod(ModuleDefinition moduleDef, HarmonyMethod harmonyMethod)
 	{
-		Method = moduleDef.ImportReference(harmonyMethod.method);
+		StaticFieldInstance = null;
+		if (harmonyMethod.method != null)
+			Method = moduleDef.ImportReference(harmonyMethod.method);
 		Category = harmonyMethod.category;
-		DeclaringType = moduleDef.ImportReference(harmonyMethod.declaringType);
+		if (harmonyMethod.declaringType != null)
+			DeclaringType = moduleDef.ImportReference(harmonyMethod.declaringType);
 		MethodName = harmonyMethod.methodName;
 		MethodType = harmonyMethod.methodType;
-		ArgumentTypes = harmonyMethod.argumentTypes?.Select(moduleDef.ImportReference).ToArray() ?? [];
+		ArgumentTypes = harmonyMethod.argumentTypes?.Select(moduleDef.ImportReference).ToArray();
 		Priority = harmonyMethod.priority;
 		Before = harmonyMethod.before ?? [];
 		After = harmonyMethod.after ?? [];
 		ReversePatchType = harmonyMethod.reversePatchType;
 		Debug = harmonyMethod.debug;
 		NonVirtualDelegate = harmonyMethod.nonVirtualDelegate;
+	}
+	
+	public CompileTimePreludeMethod(CompileTimePreludeMethod patchMethod)
+	{
+		StaticFieldInstance = patchMethod.StaticFieldInstance;
+		Method = patchMethod.Method;
+		Category = patchMethod.Category;
+		DeclaringType = patchMethod.DeclaringType;
+		MethodName = patchMethod.MethodName;
+		MethodType = patchMethod.MethodType;
+		ArgumentTypes = patchMethod.ArgumentTypes;
+		Priority = patchMethod.Priority;
+		Before = patchMethod.Before ?? [];
+		After = patchMethod.After ?? [];
+		ReversePatchType = patchMethod.ReversePatchType;
+		Debug = patchMethod.Debug;
+		NonVirtualDelegate = patchMethod.NonVirtualDelegate;
 	}
 	
 	public string Description()

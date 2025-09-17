@@ -1,4 +1,5 @@
 ﻿using HarmonyLib;
+using Microsoft.Extensions.Logging;
 using Mono.Cecil;
 using PreludeLib.CompileTime.Backend;
 using PreludeLib.CompileTime.Internal;
@@ -12,12 +13,12 @@ public class CompileTimePrelude : ICompileTimeRegistryBuilder
     private readonly CompileTimeRegistryBuilder _builder;
     private readonly ICompileTimeBackend _backend;
     
-    public CompileTimePrelude(ICompileTimeBackend backend)
+    public CompileTimePrelude(ICompileTimeBackend backend, ILogger logger)
     {
         _backend = backend;
 
         _registry = new CompileTimePatchRegistry();
-        _builder = new CompileTimeRegistryBuilder(_registry);
+        _builder = new CompileTimeRegistryBuilder(_registry, logger);
     }
 
     public void ScanAndPatchAll(AssemblyDefinition patchAssemblyDef)

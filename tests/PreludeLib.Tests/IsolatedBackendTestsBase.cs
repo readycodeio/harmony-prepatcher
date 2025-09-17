@@ -42,6 +42,8 @@ public abstract class IsolatedBackendTestsBase(ITestOutputHelper output)
         var examplesPath = Path.Combine(tempTestPath, Path.GetFileName(baseExamplesPath));
         File.Copy(baseExamplesPath, examplesPath, true);
         
+        var destPath = examplesPath.Replace("PreludeLib.Tests.Examples.dll", "PreludeLib.Tests.Examples_patched.dll");
+        
         var alc = new IsolatedAssemblyLoadContext(payloadPath, basePayloadPath);
         weakRef = new WeakReference(alc);
 
@@ -75,16 +77,13 @@ public abstract class IsolatedBackendTestsBase(ITestOutputHelper output)
 
             AlcAssert.AssertTypeInALC(type, alc);
             
-            var patchesAsm = alc.LoadFromAssemblyPath(patchesPath);
-            AlcAssert.AssertAssemblyInALC(patchesAsm, alc);
-
             if (preprocessMethod != null)
             {
                 RunTestInner(() =>
                 {
                     try
                     {
-                        preprocessMethod.Invoke(typeInst, [examplesPath]);
+                        preprocessMethod.Invoke(typeInst, ["PreludeLib.Tests.Examples", "PreludeLib.Tests.Patches", tempTestPath, destPath]);
                     }
                     catch (TargetInvocationException ex)
                     {
@@ -95,6 +94,9 @@ public abstract class IsolatedBackendTestsBase(ITestOutputHelper output)
             
             var examplesAsm = alc.LoadFromAssemblyPath(examplesPath);
             AlcAssert.AssertAssemblyInALC(examplesAsm, alc);
+
+            var patchesAsm = alc.LoadFromAssemblyPath(patchesPath);
+            AlcAssert.AssertAssemblyInALC(patchesAsm, alc);
 
             RunTestInner(() =>
             {
