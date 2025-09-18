@@ -1,5 +1,4 @@
-﻿using System.Diagnostics.CodeAnalysis;
-using System.Reflection;
+﻿using System.Reflection;
 using HarmonyLib;
 using Microsoft.Extensions.Logging;
 using PreludeLib.Runtime.Registry;
@@ -96,42 +95,51 @@ public class RuntimeWeaverBackend(ILogger logger) : IRuntimeBackend
     {
         foreach (var id in registry.GetIds())
         {
-            foreach (var original in registry.GetOriginalMethods())
+            foreach (var group in registry.GetGroups())
             {
-                foreach (var patchMethod in registry.GetRemovedPrefixMethods(original, id))
+                foreach (var target in registry.GetTargets(group))
                 {
-                    logger.LogInformation("Unpatching {Original} prefix {Prefix}", original, patchMethod.method);
-                    DoUnpatch(original, patchMethod.method);
-                }
-                
-                foreach (var patchMethod in registry.GetRemovedPostfixMethods(original, id))
-                {
-                    logger.LogInformation("Unpatching {Original} postfix {Postfix}", original, patchMethod.method);
-                    DoUnpatch(original, patchMethod.method);
-                }
-                
-                foreach (var patchMethod in registry.GetRemovedFinalizerMethods(original, id))
-                {
-                    logger.LogInformation("Unpatching {Original} finalizer {Finalizer}", original, patchMethod.method);
-                    DoUnpatch(original, patchMethod.method);
-                }
-                
-                foreach (var patchMethod in registry.GetAddedPrefixMethods(original, id))
-                {
-                    logger.LogInformation("Patching {Original} prefix {Prefix}", original, patchMethod.method);
-                    DoPatch(original, patchMethod);
-                }
-                
-                foreach (var patchMethod in registry.GetAddedPostfixMethods(original, id))
-                {
-                    logger.LogInformation("Patching {Original} postfix {Postfix}", original, patchMethod.method);
-                    DoPatch(original, patchMethod);
-                }
-                
-                foreach (var patchMethod in registry.GetAddedFinalizerMethods(original, id))
-                {
-                    logger.LogInformation("Patching {Original} finalizer {Finalizer}", original, patchMethod.method);
-                    DoPatch(original, patchMethod);
+                    var context = new AuxiliaryMethodCallContext(null!, group.ContainerType, null, null, logger);
+                    var originals = RuntimeBackendUtils.GetTargetOriginals(target, context);
+
+                    foreach (var original in originals)
+                    {
+                        foreach (var patchMethod in registry.GetRemovedPrefixMethods(target, id))
+                        {
+                            logger.LogInformation("Unpatching {Original} prefix {Prefix}", target, patchMethod.method);
+                            DoUnpatch(original, patchMethod.method);
+                        }
+                    
+                        foreach (var patchMethod in registry.GetRemovedPostfixMethods(target, id))
+                        {
+                            logger.LogInformation("Unpatching {Original} postfix {Postfix}", target, patchMethod.method);
+                            DoUnpatch(original, patchMethod.method);
+                        }
+                    
+                        foreach (var patchMethod in registry.GetRemovedFinalizerMethods(target, id))
+                        {
+                            logger.LogInformation("Unpatching {Original} finalizer {Finalizer}", target, patchMethod.method);
+                            DoUnpatch(original, patchMethod.method);
+                        }
+                    
+                        foreach (var patchMethod in registry.GetAddedPrefixMethods(target, id))
+                        {
+                            logger.LogInformation("Patching {Original} prefix {Prefix}", target, patchMethod.method);
+                            DoPatch(original, patchMethod);
+                        }
+                    
+                        foreach (var patchMethod in registry.GetAddedPostfixMethods(target, id))
+                        {
+                            logger.LogInformation("Patching {Original} postfix {Postfix}", target, patchMethod.method);
+                            DoPatch(original, patchMethod);
+                        }
+                    
+                        foreach (var patchMethod in registry.GetAddedFinalizerMethods(target, id))
+                        {
+                            logger.LogInformation("Patching {Original} finalizer {Finalizer}", target, patchMethod.method);
+                            DoPatch(original, patchMethod);
+                        }
+                    }
                 }
             }
         }

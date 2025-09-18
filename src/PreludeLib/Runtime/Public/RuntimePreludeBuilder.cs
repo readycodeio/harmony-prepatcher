@@ -24,24 +24,25 @@ public class RuntimePreludeBuilder(RuntimePrelude owner, string id, IRuntimePatc
         => _builder.ScanAndPatch(containerType);
 
     public void Patch(
-        MethodBase original,
+        PatchTarget target,
         HarmonyMethod? prefix = null,
         HarmonyMethod? postfix = null,
         HarmonyMethod? finalizer = null,
-        HarmonyMethod? transpiler = null)
-        => _builder.Patch(original, prefix, postfix, finalizer, transpiler);
+        HarmonyMethod? transpiler = null,
+        PatchGroup group = default)
+        => _builder.Patch(target, prefix, postfix, finalizer, transpiler, group);
 
-    public void Patch(MethodBase original, HarmonyPatchType patchType, HarmonyMethod patchMethod)
-        => _builder.Patch(original, patchType, patchMethod);
+    public void Patch(PatchTarget target, HarmonyPatchType patchType, HarmonyMethod patchMethod, PatchGroup group = default)
+        => _builder.Patch(target, patchType, patchMethod, group);
 
-    public void PatchPrefix(MethodBase original, HarmonyMethod prefix)
-        => _builder.PatchPrefix(original, prefix);
+    public void PatchPrefix(PatchTarget target, HarmonyMethod prefix, PatchGroup group = default)
+        => _builder.PatchPrefix(target, prefix, group);
 
-    public void PatchPostfix(MethodBase original, HarmonyMethod prefix)
-        => _builder.PatchPostfix(original, prefix);
+    public void PatchPostfix(PatchTarget target, HarmonyMethod prefix, PatchGroup group = default)
+        => _builder.PatchPostfix(target, prefix, group);
 
-    public void PatchFinalizer(MethodBase original, HarmonyMethod prefix)
-        => _builder.PatchFinalizer(original, prefix);
+    public void PatchFinalizer(PatchTarget target, HarmonyMethod prefix, PatchGroup group = default)
+        => _builder.PatchFinalizer(target, prefix, group);
 
     public void UnpatchAll()
         => _builder.UnpatchAll();
@@ -61,9 +62,9 @@ public class RuntimePreludeBuilder(RuntimePrelude owner, string id, IRuntimePatc
     public void UnpatchUncategorized()
         => _builder.UnpatchUncategorized();
 
-    public void Unpatch(MethodBase original, HarmonyPatchType patchType)
-        => _builder.Unpatch(original, patchType);
+    public void Unpatch(PatchTarget target, HarmonyPatchType patchType)
+        => _builder.Unpatch(target, patchType);
 
-    public void Unpatch(MethodBase original, MethodInfo patch)
-        => _builder.Unpatch(original, patch);
+    public void Unpatch(PatchTarget target, MethodInfo patch)
+        => _builder.Unpatch(target, patch);
 }

@@ -1,11 +1,75 @@
 ﻿using System.Reflection;
 using HarmonyLib;
-using PreludeLib.Runtime.Utils;
+using PreludeLib.Runtime.Registry;
 
 namespace PreludeLib.Runtime.Internal;
 
 internal readonly struct RuntimeContainerTypeRegistryBuilder
 {
+    private class PatchJobs
+    {
+        internal class Job
+        {
+            internal PatchTarget target;
+            internal List<HarmonyMethod> prefixes = [];
+            internal List<HarmonyMethod> postfixes = [];
+            internal List<HarmonyMethod> transpilers = [];
+            internal List<HarmonyMethod> finalizers = [];
+            internal List<HarmonyMethod> innerprefixes = [];
+            internal List<HarmonyMethod> innerpostfixes = [];
+
+            internal void AddPatch(AttributePatch patch)
+            {
+                switch (patch.type)
+                {
+                    case HarmonyPatchType.Prefix:
+                        prefixes.Add(patch.info);
+                        break;
+                    case HarmonyPatchType.Postfix:
+                        postfixes.Add(patch.info);
+                        break;
+                    case HarmonyPatchType.Transpiler:
+                        transpilers.Add(patch.info);
+                        break;
+                    case HarmonyPatchType.Finalizer:
+                        finalizers.Add(patch.info);
+                        break;
+                    case HarmonyPatchType.InnerPrefix:
+                        innerprefixes.Add(patch.info);
+                        break;
+                    case HarmonyPatchType.InnerPostfix:
+                        innerpostfixes.Add(patch.info);
+                        break;
+                }
+            }
+        }
+
+        private readonly Dictionary<PatchTarget, Job> _state = [];
+
+        internal Job GetJob(PatchGroup group, PatchTarget target)
+        {
+            if (_state.TryGetValue(target, out var job) is false)
+            {
+                job = new Job() { target = target };
+                _state[target] = job;
+            }
+            return job;
+        }
+
+        internal List<Job> GetJobs()
+        {
+            return [.. _state.Values.Where(job =>
+                job.prefixes.Count +
+                job.postfixes.Count +
+                job.transpilers.Count +
+                job.finalizers.Count +
+                job.innerprefixes.Count +
+                job.innerpostfixes.Count
+                > 0
+            )];
+        }
+    }
+    
     private static readonly List<Type> _auxiliaryTypes =
     [
         typeof(HarmonyPrepare),
@@ -20,7 +84,7 @@ internal readonly struct RuntimeContainerTypeRegistryBuilder
     private readonly Dictionary<Type, MethodInfo> _auxiliaryMethods;
     private readonly List<AttributePatch> _patchMethods;
     
-    public RuntimeContainerTypeRegistryBuilder(RuntimeRegistryBuilder owner, Type type)
+    internal RuntimeContainerTypeRegistryBuilder(RuntimeRegistryBuilder owner, Type type)
     {
         _owner = owner;
         _containerType = type;
@@ -48,8 +112,6 @@ internal readonly struct RuntimeContainerTypeRegistryBuilder
 
     public void Patch()
     {
-        // Exception? exception = null;
-
         // NOTE: Skipped `HarmonyPrepare` feature
         /*
         var mainPrepareResult = RunMethod<HarmonyPrepare, bool>(true, false);
@@ -61,39 +123,31 @@ internal readonly struct RuntimeContainerTypeRegistryBuilder
         }
         */
         
-        var replacements = new List<MethodInfo>();
-        MethodBase? lastOriginal = null;
-        try
-        {
-            var originals = GetBulkMethods();
+        PatchTarget? lastTarget = null;
+        var targets = GetBulkMethods();
+        
+        if (targets.Count == 1)
+            lastTarget = targets[0];
+        // NOTE: Skipping reverse patch feature
+        // ReversePatch(ref lastOriginal);
 
-            if (originals.Count == 1)
-                lastOriginal = originals[0];
-            // NOTE: Skipping reverse patch feature
-            // ReversePatch(ref lastOriginal);
-
-            if (originals.Count > 0)
-                BulkPatch(originals, ref lastOriginal);
-            else
-                PatchWithAttributes(ref lastOriginal);
-        }
-        catch (Exception ex)
-        {
-            // exception = ex;
-        }
+        if (targets.Count > 0)
+            BulkPatch(targets, ref lastTarget);
+        else
+            PatchWithAttributes(ref lastTarget);
 
         // NOTE: Skipped `HarmonyCleanup` feature
         // RunMethod<HarmonyCleanup>(ref exception, exception);
         // ReportException(exception, lastOriginal);
     }
     
-    private List<MethodInfo> BulkPatch(List<MethodBase> originals, ref MethodBase? lastOriginal)
+    private void BulkPatch(List<PatchTarget> targets, ref PatchTarget? lastTarget)
     {
-        var jobs = new PatchJobs<MethodInfo>();
-        for (var i = 0; i < originals.Count; i++)
+        var jobs = new PatchJobs();
+        for (var i = 0; i < targets.Count; i++)
         {
-            lastOriginal = originals[i];
-            var job = jobs.GetJob(lastOriginal);
+            lastTarget = targets[i];
+            var job = jobs.GetJob(new PatchGroup(_containerType), lastTarget.Value);
             foreach (var patchMethod in _patchMethods)
             {
                 var note = "You cannot combine TargetMethod, TargetMethods or [HarmonyPatchAll] with individual annotations";
@@ -110,82 +164,62 @@ internal readonly struct RuntimeContainerTypeRegistryBuilder
         }
         foreach (var job in jobs.GetJobs())
         {
-            lastOriginal = job.original;
+            lastTarget = job.target;
             ProcessPatchJob(job);
         }
-        return jobs.GetReplacements();
     }
     
-    private List<MethodInfo> PatchWithAttributes(ref MethodBase? lastOriginal)
+    private void PatchWithAttributes(ref PatchTarget? lastTarget)
     {
-        var jobs = new PatchJobs<MethodInfo>();
+        var jobs = new PatchJobs();
         foreach (var patchMethod in _patchMethods)
         {
-            lastOriginal = patchMethod.info.GetOriginalMethod();
-            if (lastOriginal is null)
+            lastTarget = PatchTarget.FromOriginal(patchMethod.info.GetOriginalMethod());
+            if (lastTarget is null)
                 throw new ArgumentException($"Undefined target method for patch method {patchMethod.info.method.FullDescription()}");
 
-            var job = jobs.GetJob(lastOriginal);
+            var job = jobs.GetJob(new PatchGroup(_containerType), lastTarget.Value);
             job.AddPatch(patchMethod);
         }
         foreach (var job in jobs.GetJobs())
         {
-            lastOriginal = job.original;
+            lastTarget = job.target;
             ProcessPatchJob(job);
         }
-        return jobs.GetReplacements();
     }
     
-    private void ProcessPatchJob(PatchJobs<MethodInfo>.Job job)
+    private void ProcessPatchJob(PatchJobs.Job job)
     {
-        // MethodInfo? replacement = null;
-
         // NOTE: Skipped `HarmonyPrepare` feature
         // var individualPrepareResult = RunMethod<HarmonyPrepare, bool>(true, false, null, job.original);
-        // Exception? exception = null;
 
-        // if (individualPrepareResult)
+        foreach (var prefix in job.prefixes)
         {
-            // lock (PatchProcessor.locker)
-            {
-                try
-                {
-                    foreach (var prefix in job.prefixes)
-                    {
-                        _owner.Patch(job.original, prefix: prefix);
-                    }
-                    foreach (var postfix in job.postfixes)
-                    {
-                        _owner.Patch(job.original, postfix: postfix);
-                    }
-                    foreach (var transpiler in job.transpilers)
-                    {
-                        _owner.Patch(job.original, transpiler: transpiler);
-                    }
-                    foreach (var finalizer in job.finalizers)
-                    {
-                        _owner.Patch(job.original, finalizer: finalizer);
-                    }
-                    
-                    if (job.innerprefixes.Count > 0)
-                        throw new NotImplementedException("InnerPrefix is not implemented in this backend");
-                    if (job.innerpostfixes.Count > 0)
-                        throw new NotImplementedException("InnerPostfix is not implemented in this backend");
-                }
-                catch (Exception ex)
-                {
-                    // exception = ex;
-                }
-            }
+            _owner.Patch(job.target, prefix: prefix);
+        }
+        foreach (var postfix in job.postfixes)
+        {
+            _owner.Patch(job.target, postfix: postfix);
+        }
+        foreach (var transpiler in job.transpilers)
+        {
+            _owner.Patch(job.target, transpiler: transpiler);
+        }
+        foreach (var finalizer in job.finalizers)
+        {
+            _owner.Patch(job.target, finalizer: finalizer);
         }
         
-        // NOTE: Skipped `HarmonyCleanup` feature
+        if (job.innerprefixes.Count > 0)
+            throw new NotImplementedException("InnerPrefix is not implemented");
+        if (job.innerpostfixes.Count > 0)
+            throw new NotImplementedException("InnerPostfix is not implemented");
+        
         // RunMethod<HarmonyCleanup>(ref exception, job.original, exception);
         // ReportException(exception, job.original);
-        job.replacement = RuntimePreludeMethodUtils.WrapMethod(job.original);
     }
 
-    private List<MethodBase> GetBulkMethods()
+    private List<PatchTarget> GetBulkMethods()
     {
         var isPatchAll = _containerType.GetCustomAttributes(true).Any(a => a.GetType().FullName == PatchTools.harmonyPatchAllFullName);
         if (isPatchAll)
@@ -194,18 +228,22 @@ internal readonly struct RuntimeContainerTypeRegistryBuilder
             if (type is null)
                 throw new ArgumentException($"Using {PatchTools.harmonyPatchAllFullName} requires an additional attribute for specifying the Class/Type");
 
-            var list = new List<MethodBase>();
-            list.AddRange(AccessTools.GetDeclaredConstructors(type).Cast<MethodBase>());
-            list.AddRange(AccessTools.GetDeclaredMethods(type).Cast<MethodBase>());
+            var list = new List<PatchTarget>();
+            list.AddRange(AccessTools.GetDeclaredConstructors(type).Cast<MethodBase>().Select(PatchTarget.FromOriginal));
+            list.AddRange(AccessTools.GetDeclaredMethods(type).Cast<MethodBase>().Select(PatchTarget.FromOriginal));
             var props = AccessTools.GetDeclaredProperties(type);
-            list.AddRange(props.Select(prop => prop.GetGetMethod(true)).Where(method => method is not null).Cast<MethodBase>());
-            list.AddRange(props.Select(prop => prop.GetSetMethod(true)).Where(method => method is not null).Cast<MethodBase>());
+            list.AddRange(props.Select(prop => prop.GetGetMethod(true)).Where(method => method is not null).Cast<MethodBase>().Select(PatchTarget.FromOriginal));
+            list.AddRange(props.Select(prop => prop.GetSetMethod(true)).Where(method => method is not null).Cast<MethodBase>().Select(PatchTarget.FromOriginal));
             return list;
         }
 
         var result = new List<MethodBase>();
 
-        // NOTE: Skipped `HarmonyTarget` feature
+        if (_auxiliaryMethods.TryGetValue(typeof(HarmonyTargetMethods), out var harmonyTargetListMethod))
+        {
+            return [PatchTarget.FromTargetMethod(harmonyTargetListMethod)];
+        }
+
         // var targetMethods = RunMethod<HarmonyTargetMethods, IEnumerable<MethodBase>>(null, null);
         /*
         if (targetMethods is object)
@@ -227,13 +265,17 @@ internal readonly struct RuntimeContainerTypeRegistryBuilder
         }
         */
 
+        if (_auxiliaryMethods.TryGetValue(typeof(HarmonyTargetMethod), out var harmonyTargetMethod))
+        {
+            return [PatchTarget.FromTargetMethod(harmonyTargetMethod)];
+        }
+
         // var targetMethod = RunMethod<HarmonyTargetMethod, MethodBase>(null, null, method => method is null ? "null" : null);
         /*
         if (targetMethod is not null)
             result.Add(targetMethod);
         */
 
-        return result;
+        return [];
     }
-    
 }

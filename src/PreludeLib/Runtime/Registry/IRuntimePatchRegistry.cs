@@ -5,14 +5,19 @@ namespace PreludeLib.Runtime.Registry;
 
 public interface IRuntimePatchRegistry : IReadOnlyRuntimePatchRegistry
 {
-    void AddOriginalMethod(MethodBase original);
-    void AddContainerType(Type type);
+    void AddGroup(PatchGroup group);
+    void AddTarget(PatchGroup group, PatchTarget target);
     
-    void AddPatchMethod(MethodBase original, string id, HarmonyPatchType patchType, HarmonyMethod patchMethod);
+    void AddPatchMethod(PatchTarget target, string id, HarmonyPatchType patchType, HarmonyMethod patchMethod);
     
-    void RemovePatchMethod(MethodBase original, string? id, HarmonyPatchType patchType);
-    void RemovePatchMethod(MethodBase original, string? id, HarmonyMethod patchMethod);
-    void RemovePatchMethod(MethodBase original, string? id, MethodInfo patchMethod);
+    void RemovePatchMethod(PatchTarget target, string? id, HarmonyPatchType patchType);
+    void RemovePatchMethod(PatchTarget target, string? id, HarmonyMethod patchMethod);
+    void RemovePatchMethod(PatchTarget target, string? id, MethodInfo patchMethod);
 
+    void SetPrepareGroupCallback(PatchGroup group, MethodInfo? callback);
+    void SetCleanupGroupCallback(PatchGroup group, MethodInfo? callback);
+    void SetPreparePatchMethodCallback(HarmonyMethod patchMethod, MethodInfo? callback);
+    void SetCleanupPatchMethodCallback(HarmonyMethod patchMethod, MethodInfo? callback);
+    
     void ResetChanges();
 }

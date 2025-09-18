@@ -1,5 +1,6 @@
 ﻿using System.Reflection;
 using HarmonyLib;
+using PreludeLib.Runtime.Registry;
 
 namespace PreludeLib.Runtime.Internal;
 
@@ -11,16 +12,17 @@ internal interface IRuntimeRegistryBuilder
     void ScanAndPatch(Type containerType);
     
     void Patch(
-        MethodBase original,
+        PatchTarget target,
         HarmonyMethod? prefix = null,
         HarmonyMethod? postfix = null,
         HarmonyMethod? finalizer = null,
-        HarmonyMethod? transpiler = null
+        HarmonyMethod? transpiler = null,
+        PatchGroup group = default
     );
-    void Patch(MethodBase original, HarmonyPatchType patchType, HarmonyMethod patchMethod);
-    void PatchPrefix(MethodBase original, HarmonyMethod prefix);
-    void PatchPostfix(MethodBase original, HarmonyMethod prefix);
-    void PatchFinalizer(MethodBase original, HarmonyMethod prefix);
+    void Patch(PatchTarget target, HarmonyPatchType patchType, HarmonyMethod patchMethod, PatchGroup group = default);
+    void PatchPrefix(PatchTarget target, HarmonyMethod prefix, PatchGroup group = default);
+    void PatchPostfix(PatchTarget target, HarmonyMethod prefix, PatchGroup group = default);
+    void PatchFinalizer(PatchTarget target, HarmonyMethod prefix, PatchGroup group = default);
     
     void UnpatchAll();
     void UnpatchAll(Assembly patchAssembly);
@@ -28,6 +30,6 @@ internal interface IRuntimeRegistryBuilder
     void UnpatchUncategorized(Assembly patchAssembly);
     void UnpatchCategory(string category);
     void UnpatchUncategorized();
-    void Unpatch(MethodBase original, HarmonyPatchType patchType);
-    void Unpatch(MethodBase original, MethodInfo patch);
+    void Unpatch(PatchTarget target, HarmonyPatchType patchType);
+    void Unpatch(PatchTarget target, MethodInfo patch);
 }
