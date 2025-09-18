@@ -1,8 +1,9 @@
-﻿using Xunit.Abstractions;
+﻿using PreludeLib.Tests.Preprocess;
+using Xunit.Abstractions;
 
 namespace PreludeLib.Tests.Targeting;
 
-public abstract class TargetingTestsBase(ITestOutputHelper output) : IsolatedBackendTestsBase(output)
+public abstract class TargetingTestsBase(ITestOutputHelper output, ITestPreprocessor? preprocessor = null) : IsolatedBackendTestsBase(output, preprocessor)
 {
     [Fact]
     public void PatchByMethodNameAndSignatureTargetsCorrectOverload()

@@ -12,6 +12,7 @@
     
     <ItemGroup>
         <ProjectReference Include="..\..\src\Harmony\Lib.Harmony\Lib.Harmony.csproj" />
+        <ProjectReference Include="..\..\src\PreludeLib\PreludeLib.csproj" />
         <ProjectReference Include="..\PreludeLib.Tests.Examples\PreludeLib.Tests.Examples.csproj" />
     </ItemGroup>
 

@@ -1,7 +1,7 @@
 ﻿using Microsoft.Extensions.Logging;
 using Xunit.Abstractions;
 
-namespace PreludeLib.Tests;
+namespace PreludeLib.Tests.Utils;
 
 public sealed class XUnitLogger(ITestOutputHelper output, string category) : ILogger
 {

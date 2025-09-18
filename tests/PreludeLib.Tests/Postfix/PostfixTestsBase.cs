@@ -1,8 +1,9 @@
-﻿using Xunit.Abstractions;
+﻿using PreludeLib.Tests.Preprocess;
+using Xunit.Abstractions;
 
 namespace PreludeLib.Tests.Postfix;
 
-public abstract class PostfixTestsBase(ITestOutputHelper output) : IsolatedBackendTestsBase(output)
+public abstract class PostfixTestsBase(ITestOutputHelper output, ITestPreprocessor? preprocessor = null) : IsolatedBackendTestsBase(output, preprocessor)
 {
     [Fact]
     public void PostfixCanReadAndModify__result()

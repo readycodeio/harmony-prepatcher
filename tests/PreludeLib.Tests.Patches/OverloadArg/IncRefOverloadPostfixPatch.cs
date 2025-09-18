@@ -1,5 +1,6 @@
 ﻿using System.Reflection;
 using HarmonyLib;
+using PreludeLib.Attributes;
 using PreludeLib.Tests.Examples;
 
 namespace PreludeLib.Tests.Patches.OverloadArg;
@@ -9,10 +10,9 @@ namespace PreludeLib.Tests.Patches.OverloadArg;
 [HarmonyPatch(typeof(OverloadArgTargets))]
 public static class IncRefOverloadPostfixPatch
 {
+    [HarmonyTargetMethodHint(nameof(OverloadArgTargets.Inc), [typeof(Ref<int>)])]
     static MethodBase TargetMethod()
-        => AccessTools.Method(typeof(OverloadArgTargets),
-            nameof(OverloadArgTargets.Inc),
-            new[] { typeof(int).MakeByRefType() });
+        => AccessTools.Method(typeof(OverloadArgTargets), nameof(OverloadArgTargets.Inc), [typeof(int).MakeByRefType()]);
     
     [HarmonyPostfix]
     public static void IncRef_Postfix(ref int __result)

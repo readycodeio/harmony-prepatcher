@@ -1,6 +1,7 @@
 ﻿using System.Collections.Concurrent;
 using System.Reflection;
 using System.Reflection.Emit;
+using PreludeLib.Attributes;
 using PreludeLib.Runtime.Backend.WeaverCallback;
 
 namespace PreludeLib.Runtime.Utils;
@@ -130,51 +131,5 @@ public static class RuntimePreludeMethodUtils
             if (p.IsOut) a |= ParameterAttributes.Out;
             return a;
         }
-    }
-    
-    public static Type GetOrCreateDelegateType(MethodInfo methodInfo)
-    {
-        var key = GetCacheKey(methodInfo);
-
-        if (_delegateTypeCache.TryGetValue(key, out var result))
-            return result;
-        
-        var typeName = "Del_" + Guid.NewGuid().ToString("N");
-        var delTypeBuilder = _cacheModule.DefineType(
-            typeName,
-            TypeAttributes.Class | TypeAttributes.Public | TypeAttributes.Sealed | TypeAttributes.AnsiClass | TypeAttributes.AutoClass,
-            typeof(MulticastDelegate));
-
-        // Standard delegate .ctor(object, IntPtr)
-        var ctorBuilder = delTypeBuilder.DefineConstructor(
-            MethodAttributes.RTSpecialName | MethodAttributes.Public | MethodAttributes.HideBySig,
-            CallingConventions.Standard,
-            [typeof(object), typeof(IntPtr)]);
-        ctorBuilder.SetImplementationFlags(MethodImplAttributes.Runtime | MethodImplAttributes.Managed);
-
-        // Invoke method with proper signature (supports ref/out/in via ByRef parameter types)
-        var invokeMethodBuilder = delTypeBuilder.DefineMethod(
-            "Invoke",
-            MethodAttributes.Public | MethodAttributes.HideBySig | MethodAttributes.Virtual | MethodAttributes.NewSlot,
-            key.ReturnType,
-            key.ParamTypes);
-
-        // Apply in/out flags to parameters (purely descriptive; ByRef-ness is already in paramTypes)
-        for (var i = 0; i < key.ParamTypes.Length; i++)
-        {
-            invokeMethodBuilder.DefineParameter(i + 1, key.ParamAttributes[i], strParamName: null);
-        }
-
-        // Mark as runtime-implemented (delegate invocation handled by CLR)
-        invokeMethodBuilder.SetImplementationFlags(MethodImplAttributes.Runtime | MethodImplAttributes.Managed);
-
-        result = delTypeBuilder.CreateTypeInfo().AsType();
-        return _delegateTypeCache.GetOrAdd(key, result);
-    }
-    
-    public static Delegate CreateDelegate(MethodInfo methodInfo)
-    {
-        var delType = GetOrCreateDelegateType(methodInfo);
-        return methodInfo.CreateDelegate(delType);
     }
 }

@@ -11,7 +11,7 @@ public sealed class IsolatedAssemblyLoadContext : AssemblyLoadContext
         "HarmonyLib",
         "MonoMod.RuntimeDetour",
         "MonoMod.Utils",
-        "Mono.Cecil" // if present
+        "Mono.Cecil",
     };
 
     private static readonly string[] Main =

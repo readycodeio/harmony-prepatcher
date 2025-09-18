@@ -1,8 +1,9 @@
+using PreludeLib.Tests.Preprocess;
 using Xunit.Abstractions;
 
 namespace PreludeLib.Tests.Simple;
 
-public abstract class SimpleTestsBase(ITestOutputHelper output) : IsolatedBackendTestsBase(output)
+public abstract class SimpleTestsBase(ITestOutputHelper output, ITestPreprocessor? preprocessor = null) : IsolatedBackendTestsBase(output, preprocessor)
 {
     [Fact]
     public void BaseBehavior_WithoutPatches_IsUnmodified()

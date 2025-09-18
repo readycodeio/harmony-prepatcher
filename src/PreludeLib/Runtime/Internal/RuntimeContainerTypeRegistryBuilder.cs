@@ -6,7 +6,6 @@ namespace PreludeLib.Runtime.Internal;
 
 internal readonly struct RuntimeContainerTypeRegistryBuilder
 {
-    /*
     private static readonly List<Type> _auxiliaryTypes =
     [
         typeof(HarmonyPrepare),
@@ -14,12 +13,11 @@ internal readonly struct RuntimeContainerTypeRegistryBuilder
         typeof(HarmonyTargetMethod),
         typeof(HarmonyTargetMethods)
     ];
-    */
     
     private readonly RuntimeRegistryBuilder _owner;
     private readonly Type _containerType;
     private readonly HarmonyMethod _containerAttributes;
-    // private readonly Dictionary<Type, MethodInfo> _auxiliaryMethods;
+    private readonly Dictionary<Type, MethodInfo> _auxiliaryMethods;
     private readonly List<AttributePatch> _patchMethods;
     
     public RuntimeContainerTypeRegistryBuilder(RuntimeRegistryBuilder owner, Type type)
@@ -31,7 +29,6 @@ internal readonly struct RuntimeContainerTypeRegistryBuilder
         _containerAttributes = HarmonyMethod.Merge(harmonyAttributes);
         _containerAttributes.methodType ??= MethodType.Normal;
 
-        /*
         _auxiliaryMethods = [];
         foreach (var auxType in _auxiliaryTypes)
         {
@@ -39,7 +36,6 @@ internal readonly struct RuntimeContainerTypeRegistryBuilder
             if (method is not null)
                 _auxiliaryMethods[auxType] = method;
         }
-        */
 
         _patchMethods = PatchTools.GetPatchMethods(_containerType);
         foreach (var patchMethod in _patchMethods)
@@ -239,4 +235,5 @@ internal readonly struct RuntimeContainerTypeRegistryBuilder
 
         return result;
     }
+    
 }

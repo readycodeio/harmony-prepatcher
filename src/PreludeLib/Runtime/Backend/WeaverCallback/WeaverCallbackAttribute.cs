@@ -3,6 +3,7 @@ using HarmonyLib;
 
 namespace PreludeLib.Runtime.Backend.WeaverCallback;
 
+[AttributeUsage(AttributeTargets.Event)]
 public class WeaverCallbackAttribute : Attribute
 {
     private readonly SerializedMethodInfo _original;
@@ -17,15 +18,7 @@ public class WeaverCallbackAttribute : Attribute
     public MethodInfo? GetPatchMethod(string? alcName)
         => _patch.GetMethod(alcName);
 
-    public WeaverCallbackAttribute(MethodBase original, MethodInfo patchMethod, HarmonyPatchType patchType, string? category)
-    {
-        _original = new SerializedMethodInfo(original);
-        _patch = new SerializedMethodInfo(patchMethod);
-        PatchType = patchType;
-        Category = category;
-    }
-
-    public WeaverCallbackAttribute(SerializedMethodInfo original, SerializedMethodInfo patch, HarmonyPatchType patchType, string? category)
+    private WeaverCallbackAttribute(SerializedMethodInfo original, SerializedMethodInfo patch, HarmonyPatchType patchType, string? category)
     {
         _original = original;
         _patch = patch;

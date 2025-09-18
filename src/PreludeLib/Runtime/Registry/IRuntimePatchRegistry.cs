@@ -6,6 +6,7 @@ namespace PreludeLib.Runtime.Registry;
 public interface IRuntimePatchRegistry : IReadOnlyRuntimePatchRegistry
 {
     void AddOriginalMethod(MethodBase original);
+    void AddContainerType(Type type);
     
     void AddPatchMethod(MethodBase original, string id, HarmonyPatchType patchType, HarmonyMethod patchMethod);
     

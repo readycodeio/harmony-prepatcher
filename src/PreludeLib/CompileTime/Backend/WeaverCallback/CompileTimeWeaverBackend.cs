@@ -5,7 +5,6 @@ using Mono.Cecil;
 using Mono.Cecil.Cil;
 using Mono.Cecil.Rocks;
 using MonoMod.Utils;
-using MonoMod.Utils.Cil;
 using PreludeLib.CompileTime.Public;
 using PreludeLib.CompileTime.Registry;
 using PreludeLib.CompileTime.Utils;
@@ -98,8 +97,8 @@ public class CompileTimeWeaverBackend(ILogger logger) : ICompileTimeBackend
 		// Delegate type
 		var multicastDelegateRef = moduleDef.ImportReference(typeof(MulticastDelegate));
 		var delType = new TypeDefinition(
-			originalDef.DeclaringType.Namespace,
-			$"{patchDef.DeclaringType.FullName}__{patchDef.Name}__DelegateType",
+			patchDef.DeclaringType.Namespace,
+			$"{patchDef.DeclaringType.Name}__{patchDef.Name}__DelegateType",
             attributes: TypeAttributes.Public | TypeAttributes.Sealed | TypeAttributes.AutoClass | TypeAttributes.AnsiClass,
             baseType: multicastDelegateRef
         );
@@ -129,14 +128,19 @@ public class CompileTimeWeaverBackend(ILogger logger) : ICompileTimeBackend
         delType.Methods.Add(delInvoke);
 
 		var typeDef = new TypeDefinition(
-			originalDef.DeclaringType.Namespace,
+			patchDef.DeclaringType.Namespace,
 			$"{patchDef.DeclaringType.Name}__{patchDef.Name}__Callback", 
-			TypeAttributes.Public | TypeAttributes.Abstract | TypeAttributes.Sealed | TypeAttributes.BeforeFieldInit | TypeAttributes.AutoClass | TypeAttributes.AnsiClass
-		);
+			TypeAttributes.Class | TypeAttributes.Public |
+			TypeAttributes.Abstract | TypeAttributes.Sealed |
+			TypeAttributes.AnsiClass | TypeAttributes.BeforeFieldInit
+		)
+		{
+			BaseType = moduleDef.TypeSystem.Object
+		};
 		moduleDef.Types.Add(typeDef);
-
+		
 		var eventFieldRef = new FieldDefinition(
-			"Callback",
+			"CallbackField",
 			FieldAttributes.Public | FieldAttributes.Static,
 			delType
 		);
@@ -750,7 +754,8 @@ public class CompileTimeWeaverBackend(ILogger logger) : ICompileTimeBackend
 
 		    var tmpBoxVars = new List<KeyValuePair<VariableDefinition, TypeReference>>();
 		    outFlow.AppendAll(
-			    EmitCallParameter(
+			    EmitCallParameterAndCall(
+				    outFlow,
 				    original,
 				    fix, 
 				    false, 
@@ -761,7 +766,6 @@ public class CompileTimeWeaverBackend(ILogger logger) : ICompileTimeBackend
 				    tmpBoxVars
 				)
 			);
-		    outFlow.Append(Instruction.Create(OpCodes.Call, fix.Method));
 		    if (OriginalParameters(fix.Method!).Any(pair => pair.realName == MethodPatcherTools.ARGS_ARRAY_VAR))
 			    outFlow.AppendAll(RestoreArgumentArray(original));
 		    if (tmpInstanceBoxingVar != null)
@@ -832,7 +836,8 @@ public class CompileTimeWeaverBackend(ILogger logger) : ICompileTimeBackend
 	    {
 		    var tmpBoxVars = new List<KeyValuePair<VariableDefinition, TypeReference>>();
 		    outFlow.AppendAll(
-			    EmitCallParameter(
+			    EmitCallParameterAndCall(
+				    outFlow,
 				    original, 
 				    fix,
 				    true,
@@ -843,7 +848,6 @@ public class CompileTimeWeaverBackend(ILogger logger) : ICompileTimeBackend
 				    tmpBoxVars
 				)
 			);
-		    outFlow.Append(Instruction.Create(OpCodes.Call, fix.Method));
 		    if (OriginalParameters(fix.Method!).Any(pair => pair.realName == MethodPatcherTools.ARGS_ARRAY_VAR))
 			    outFlow.AppendAll(RestoreArgumentArray(original));
 		    if (tmpInstanceBoxingVar != null)
@@ -924,7 +928,8 @@ public class CompileTimeWeaverBackend(ILogger logger) : ICompileTimeBackend
 
 		    var tmpBoxVars = new List<KeyValuePair<VariableDefinition, TypeReference>>();
 		    outFlow.AppendAll(
-			    EmitCallParameter(
+			    EmitCallParameterAndCall(
+				    outFlow,
 				    original,
 				    fix,
 				    false,
@@ -935,7 +940,6 @@ public class CompileTimeWeaverBackend(ILogger logger) : ICompileTimeBackend
 				    tmpBoxVars
 				)
 			);
-		    outFlow.Append(Instruction.Create(OpCodes.Call, fix.Method!));
 		    if (OriginalParameters(fix.Method!).Any(pair => pair.realName == MethodPatcherTools.ARGS_ARRAY_VAR))
 			    outFlow.AppendAll(RestoreArgumentArray(original));
 		    if (tmpInstanceBoxingVar != null)
@@ -1002,13 +1006,8 @@ public class CompileTimeWeaverBackend(ILogger logger) : ICompileTimeBackend
     {
 	    var result = new List<Instruction>();
 
-	    var body = originalDef.Body;
 	    var module = originalDef.Module;
-	    var originalIsStatic = originalDef.IsStatic;
 	    var parameters = originalDef.Parameters;
-	    if (!originalIsStatic)
-		    parameters = [body.ThisParameter, ..parameters];
-	    var i = 0;
 	    foreach (var pInfo in parameters)
 	    {
 		    if (pInfo.IsOut || pInfo.Attributes.HasFlag(ParameterAttributes.Retval))
@@ -1017,7 +1016,6 @@ public class CompileTimeWeaverBackend(ILogger logger) : ICompileTimeBackend
 
 	    result.Add(Instruction.Create(OpCodes.Ldc_I4, parameters.Count));
 	    result.Add(Instruction.Create(OpCodes.Newarr, module.ImportReference(typeof(object))));
-	    i = 0;
 	    var arrayIdx = 0;
 	    foreach (var pInfo in parameters)
 	    {
@@ -1157,12 +1155,7 @@ public class CompileTimeWeaverBackend(ILogger logger) : ICompileTimeBackend
 	    
 	    var originalDef = original.MethodDef;
 	    var module = originalDef.Module;
-	    var body = originalDef.Body;
-	    var originalIsStatic = originalDef.IsStatic;
 	    var parameters = originalDef.Parameters;
-	    if (!originalIsStatic)
-		    parameters = [body.ThisParameter, ..parameters];
-	    var i = 0;
 	    var arrayIdx = 0;
 	    foreach (var pInfo in parameters)
 	    {
@@ -1311,7 +1304,8 @@ public class CompileTimeWeaverBackend(ILogger logger) : ICompileTimeBackend
     
     #region Codegen method parameters
     
-    private List<Instruction> EmitCallParameter(
+    private List<Instruction> EmitCallParameterAndCall(
+	    CecilFlowHelper flow,
 		OriginalMethod original,
 	    CompileTimePreludeMethod patch,
 		bool allowFirsParamPassthrough,
@@ -1351,9 +1345,21 @@ public class CompileTimeWeaverBackend(ILogger logger) : ICompileTimeBackend
 			parameters.RemoveAt(0);
 		}
 
+		CecilLabel skipInvokeLabel = default;
 		if (staticFieldThis != null)
 		{
-			result.Add(Instruction.Create(OpCodes.Ldsfld, staticFieldThis!));
+			skipInvokeLabel = flow.DefineLabel();
+			var invokeLabel = flow.DefineLabel();
+			result.Add(Instruction.Create(OpCodes.Ldsfld, staticFieldThis));
+			result.Add(Instruction.Create(OpCodes.Dup));
+			result.Add(Instruction.Create(OpCodes.Brtrue_S, invokeLabel.Instruction));
+			result.Add(Instruction.Create(OpCodes.Pop));
+			if (EqualTypeRef(patch.Method!.ReturnType, ts.Boolean))
+			{
+				result.Add(Instruction.Create(OpCodes.Ldc_I4_1));
+			}
+			result.Add(Instruction.Create(OpCodes.Br_S, skipInvokeLabel.Instruction));
+			result.Add(NopWithLabels(flow, invokeLabel));
 		}
 
 		foreach (var injection in patchInjections)
@@ -1646,6 +1652,14 @@ public class CompileTimeWeaverBackend(ILogger logger) : ICompileTimeBackend
 					result.Add(LoadIndOpCodeFor(originalParameters[argumentIdx].ParameterType, module));
 			}
 		}
+
+		result.Add(Instruction.Create(OpCodes.Call, patch.Method));
+
+		if (staticFieldThis != null)
+		{
+			result.Add(NopWithLabels(flow, skipInvokeLabel));
+		}
+		
 		return result;
 	}
     

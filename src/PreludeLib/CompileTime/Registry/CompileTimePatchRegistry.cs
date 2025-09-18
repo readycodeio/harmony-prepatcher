@@ -180,7 +180,7 @@ public class CompileTimePatchRegistry : ICompileTimePatchRegistry
         if (patchType == HarmonyPatchType.All || patchType == HarmonyPatchType.Postfix)
             AddPatchMethod(originalEntry.Postfixes, originalEntry.AddedPostfixes, patchEntry);
         if (patchType == HarmonyPatchType.All || patchType == HarmonyPatchType.Finalizer)
-            AddPatchMethod(originalEntry.Finalizers, originalEntry.Finalizers, patchEntry);
+            AddPatchMethod(originalEntry.Finalizers, originalEntry.AddedFinalizers, patchEntry);
         if (patchType == HarmonyPatchType.Transpiler)
             throw new NotSupportedException("Transpilers are not supported in CompileTimePatchRegistry");
     }

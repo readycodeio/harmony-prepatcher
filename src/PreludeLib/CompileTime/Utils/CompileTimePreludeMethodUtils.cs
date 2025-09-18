@@ -92,58 +92,73 @@ public static class CompileTimePreludeMethodUtils
 
 	    Type ParseType(TypeReference typeRef)
 	    {
+		    if (typeRef.FullName == typeof(Type).FullName)
+			    return typeof(TypeReference);
+		    
 		    var asm = Assembly.Load(typeRef.Resolve().Module.Assembly.FullName);
 		    var type = asm.GetType(typeRef.FullName)!;
 		    return type;
 	    }
 	    
-	    object ParseArg(object inputArg, Type type)
+	    object ParseArg(object inputArg, TypeReference typeRef)
 	    {
 		    if (inputArg is CustomAttributeArgument[] inputArr)
 		    {
-			    var elemType = type.GetElementType();
-			    var arr = Array.CreateInstance(elemType!, inputArr.Length);
+			    var elemTypeRef = typeRef.GetElementType();
+			    var elemType = ParseType(elemTypeRef);
+			    var arr = Array.CreateInstance(elemType, inputArr.Length);
 			    for (var i = 0; i < arr.Length; i++)
 			    {
-				    var elem = ParseArg(inputArr[i].Value, elemType!);
+				    var elem = ParseArg(inputArr[i].Value, elemTypeRef);
 				    arr.SetValue(elem, i);
 			    }
 			    return arr;
 		    }
 		    else if (inputArg is CustomAttributeArgument attr)
 		    {
-			    var inputType = ParseType(attr.Type);
-			    var val = ParseArg(attr.Value, inputType);
+			    var val = ParseArg(attr.Value, attr.Type);
 			    return val;
-		    }
-		    else if (inputArg is TypeReference typeRef)
-		    {
-			    return ParseType(typeRef);
 		    }
 		    else
 		    {
 			    var val = inputArg;
-			    
-			    if (type.IsEnum)
+
+			    var typeDef = typeRef.Resolve();
+			    if (typeDef.IsEnum)
 			    {
+				    var type = ParseType(typeDef);
 				    val = Enum.ToObject(type, val);
 			    }
 
 			    return val;
 		    }
 	    }
-	    
-	    var args = customAttr.ConstructorArguments.Select(x => ParseArg(x.Value, ParseType(x.Type))).ToArray();
-	    var attributeValue = Activator.CreateInstance(attributeType, args)!;
-	    
-        var f_info = attributeValue.GetType().GetField(nameof(HarmonyAttribute.info), AccessTools.all);
-        if (f_info is null)
-            return null;
-        if (f_info.FieldType.FullName != typeof(HarmonyMethod).FullName)
-            return null;
-        var info = f_info.GetValue(attributeValue);
-        return new CompileTimePreludeMethod(customAttr.AttributeType.Module, (HarmonyMethod)info!);
+
+	    var result = new CompileTimePreludeMethod();
+	    var resultType = typeof(CompileTimePreludeMethod);
+
+	    var consDef = customAttr.Constructor.Resolve();
+	    for (var i = 0; i < customAttr.ConstructorArguments.Count; i++)
+	    {
+		    var param = consDef.Parameters[i];
+		    var customAttrArg = customAttr.ConstructorArguments[i];
+
+		    var paramName = Capitalize(param.Name);
+		    var field = resultType.GetField(paramName!);
+		    var val = ParseArg(customAttrArg.Value, customAttrArg.Type);
+		    field!.SetValue(result, val);
+	    }
+
+	    return result;
     }
+    
+    public static string? Capitalize(string? input) =>
+	    input switch
+	    {
+		    null => null,
+		    "" => "",
+		    _ => input[0].ToString().ToUpper() + input.Substring(1)
+	    };
     
 	public static MethodReference? GetOriginalMethod(this CompileTimePreludeMethod patchMethod)
 	{

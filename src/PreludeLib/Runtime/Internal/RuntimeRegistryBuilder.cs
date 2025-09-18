@@ -237,8 +237,6 @@ public class RuntimeRegistryBuilder(string id, IRuntimePatchRegistry registry) :
                 result = [];
                 d.Add(category, result);
             }
-            
-            d.Add(category, result);
         }
         
         var allTypes = GetAllTypes(patchAssembly);

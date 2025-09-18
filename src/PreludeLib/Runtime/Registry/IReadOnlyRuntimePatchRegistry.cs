@@ -42,4 +42,9 @@ public interface IReadOnlyRuntimePatchRegistry
     IEnumerable<HarmonyMethod> GetRemovedPostfixMethods(MethodBase original, string? id);
     IEnumerable<HarmonyMethod> GetRemovedFinalizerMethods(MethodBase original, string? id);
     bool HasRemovedPatchMethod(MethodBase original, string? id, HarmonyPatchType patchType);
+    
+    MethodInfo? GetPrepareContainerTypeCallback(Type containerType);
+    MethodInfo? GetCleanupContainerTypeCallback(Type containerType);
+    MethodInfo? GetPreparePatchMethodCallback(HarmonyMethod patchMethod);
+    MethodInfo? GetCleanupPatchMethodCallback(HarmonyMethod patchMethod);
 }

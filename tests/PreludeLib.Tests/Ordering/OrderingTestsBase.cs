@@ -1,9 +1,10 @@
-﻿using Xunit.Abstractions;
+﻿using PreludeLib.Tests.Preprocess;
+using Xunit.Abstractions;
 
 namespace PreludeLib.Tests.Ordering;
 
 [Collection("HarmonyNonParallel")]
-public abstract class OrderingTestsBase(ITestOutputHelper output) : IsolatedBackendTestsBase(output)
+public abstract class OrderingTestsBase(ITestOutputHelper output, ITestPreprocessor? preprocessor = null) : IsolatedBackendTestsBase(output, preprocessor)
 {
     [Fact]
     public void IncrementalPrefixes_RespectPriorityAtEachStep()

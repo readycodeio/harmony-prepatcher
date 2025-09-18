@@ -1,8 +1,9 @@
-﻿using Xunit.Abstractions;
+﻿using PreludeLib.Tests.Preprocess;
+using Xunit.Abstractions;
 
 namespace PreludeLib.Tests.Finalizer;
 
-public abstract class FinalizerTestsBase(ITestOutputHelper output) : IsolatedBackendTestsBase(output)
+public abstract class FinalizerTestsBase(ITestOutputHelper output, ITestPreprocessor? preprocessor = null) : IsolatedBackendTestsBase(output, preprocessor)
 {
     [Fact]
     public void FinalizerReceivesExceptionWhenOriginalThrows()

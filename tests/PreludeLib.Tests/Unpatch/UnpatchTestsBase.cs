@@ -1,9 +1,10 @@
-﻿using Xunit.Abstractions;
+﻿using PreludeLib.Tests.Preprocess;
+using Xunit.Abstractions;
 
 namespace PreludeLib.Tests.Unpatch;
 
 [Collection("HarmonyNonParallel")]
-public abstract class UnpatchTestsBase(ITestOutputHelper output) : IsolatedBackendTestsBase(output)
+public abstract class UnpatchTestsBase(ITestOutputHelper output, ITestPreprocessor? preprocessor = null) : IsolatedBackendTestsBase(output, preprocessor)
 {
     [Fact]
     public void UnpatchSpecificPrefix_MiddleRemoval_KeepsOrderStable()

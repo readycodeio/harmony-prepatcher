@@ -29,6 +29,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MonoMod.SourceGen.Internal"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "iced", "src\Harmony\LocalMonoMod\external\iced.csproj", "{47D340E2-EB79-476E-B7DB-8428A4491557}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PreludeLib.Tests.Preprocess", "tests\PreludeLib.Tests.Preprocess\PreludeLib.Tests.Preprocess.csproj", "{001AFAF8-9B1E-44DC-A76D-64E82633C6B2}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PreludeLib.Tests.Utils", "tests\PreludeLib.Tests.Utils\PreludeLib.Tests.Utils.csproj", "{13F3553C-F2EC-4921-9171-2B75368B071F}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -94,5 +98,13 @@ Global
 		{47D340E2-EB79-476E-B7DB-8428A4491557}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{47D340E2-EB79-476E-B7DB-8428A4491557}.Release|Any CPU.ActiveCfg = Debug|Any CPU
 		{47D340E2-EB79-476E-B7DB-8428A4491557}.Release|Any CPU.Build.0 = Debug|Any CPU
+		{001AFAF8-9B1E-44DC-A76D-64E82633C6B2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{001AFAF8-9B1E-44DC-A76D-64E82633C6B2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{001AFAF8-9B1E-44DC-A76D-64E82633C6B2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{001AFAF8-9B1E-44DC-A76D-64E82633C6B2}.Release|Any CPU.Build.0 = Release|Any CPU
+		{13F3553C-F2EC-4921-9171-2B75368B071F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{13F3553C-F2EC-4921-9171-2B75368B071F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{13F3553C-F2EC-4921-9171-2B75368B071F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{13F3553C-F2EC-4921-9171-2B75368B071F}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

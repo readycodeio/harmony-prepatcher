@@ -2,12 +2,15 @@ using System.Reflection;
 using System.Runtime.ExceptionServices;
 using HarmonyLib;
 using Microsoft.Extensions.Logging;
+using PreludeLib.Runtime.Public;
+using PreludeLib.Tests.Preprocess;
+using PreludeLib.Tests.Utils;
 using Xunit.Abstractions;
 using Xunit.Sdk;
 
 namespace PreludeLib.Tests; 
 
-public abstract class IsolatedBackendTestsBase(ITestOutputHelper output)
+public abstract class IsolatedBackendTestsBase(ITestOutputHelper output, ITestPreprocessor? preprocessor = null)
 {
     private void RunTestInner(Action testFunc, bool shouldPass)
     {
@@ -42,15 +45,13 @@ public abstract class IsolatedBackendTestsBase(ITestOutputHelper output)
         var examplesPath = Path.Combine(tempTestPath, Path.GetFileName(baseExamplesPath));
         File.Copy(baseExamplesPath, examplesPath, true);
         
-        var destPath = examplesPath.Replace("PreludeLib.Tests.Examples.dll", "PreludeLib.Tests.Examples_patched.dll");
-        
         var alc = new IsolatedAssemblyLoadContext(payloadPath, basePayloadPath);
         weakRef = new WeakReference(alc);
 
         try
         {
             var asm = alc.LoadFromAssemblyPath(payloadPath);
-            var type = asm.GetType(GetType().FullName!.Replace("Tests", "Payload"), throwOnError: true)!;
+            var type = asm.GetType(GetType().FullName!.Replace("Tests", "Payload"))!;
             var typeInst = Activator.CreateInstance(type, logger);
 
             var t = type;
@@ -61,36 +62,16 @@ public abstract class IsolatedBackendTestsBase(ITestOutputHelper output)
                 t = t.BaseType;
             }
             Assert.NotNull(testMethod);
-
-            t = type;
-            MethodInfo? preprocessMethod = null;
-            while (preprocessMethod == null && t != null)
-            {
-                preprocessMethod = t.GetMethod("Preprocess", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-                t = t.BaseType;
-            }
             
             var shouldPassProp = type.GetProperty("ShouldPass", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
             var shouldPass = isBaseline || (shouldPassProp != null && (bool)shouldPassProp.GetValue(typeInst!)!);
 
             AlcAssert.AssertTypeInDefaultALC(typeof(Harmony));
+            AlcAssert.AssertTypeInDefaultALC(typeof(RuntimePrelude));
 
             AlcAssert.AssertTypeInALC(type, alc);
             
-            if (preprocessMethod != null)
-            {
-                RunTestInner(() =>
-                {
-                    try
-                    {
-                        preprocessMethod.Invoke(typeInst, ["PreludeLib.Tests.Examples", "PreludeLib.Tests.Patches", tempTestPath, destPath]);
-                    }
-                    catch (TargetInvocationException ex)
-                    {
-                        ExceptionDispatchInfo.Capture(ex.InnerException!).Throw();
-                    }
-                }, shouldPass);
-            }
+            preprocessor?.Preprocess("PreludeLib.Tests.Examples", "PreludeLib.Tests.Patches", tempTestPath);
             
             var examplesAsm = alc.LoadFromAssemblyPath(examplesPath);
             AlcAssert.AssertAssemblyInALC(examplesAsm, alc);

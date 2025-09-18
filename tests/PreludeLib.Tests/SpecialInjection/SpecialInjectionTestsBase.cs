@@ -1,8 +1,9 @@
-﻿using Xunit.Abstractions;
+﻿using PreludeLib.Tests.Preprocess;
+using Xunit.Abstractions;
 
 namespace PreludeLib.Tests.SpecialInjection;
 
-public abstract class SpecialInjectionTestsBase(ITestOutputHelper output) : IsolatedBackendTestsBase(output)
+public abstract class SpecialInjectionTestsBase(ITestOutputHelper output, ITestPreprocessor? preprocessor = null) : IsolatedBackendTestsBase(output, preprocessor)
 {
     [Fact]
     public void Injected__instanceProvidesOriginalInstance()

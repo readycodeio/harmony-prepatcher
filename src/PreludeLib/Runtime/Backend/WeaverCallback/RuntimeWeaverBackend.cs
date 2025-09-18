@@ -1,9 +1,8 @@
-﻿using System.Reflection;
-using System.Runtime.Loader;
+﻿using System.Diagnostics.CodeAnalysis;
+using System.Reflection;
 using HarmonyLib;
 using Microsoft.Extensions.Logging;
 using PreludeLib.Runtime.Registry;
-using PreludeLib.Runtime.Utils;
 
 namespace PreludeLib.Runtime.Backend.WeaverCallback;
 
@@ -17,49 +16,36 @@ public class RuntimeWeaverBackend(ILogger logger) : IRuntimeBackend
         public readonly EventInfo Event = ev;
     }
     
-    private readonly HashSet<Type> _containerTypes = [];
     private readonly Dictionary<MethodInfo, PatchEntry> _patchEntries = [];
 
-    private void EnsureTypeContainer(Type type)
+    private void EnsurePatchEntry(MethodBase original, HarmonyMethod patchMethod, out PatchEntry patchEntry)
     {
-        if (!_containerTypes.Add(type))
+        if (_patchEntries.TryGetValue(patchMethod.method, out patchEntry))
             return;
 
-        var events = type.GetEvents();
+        var callbackType = original.Module.Assembly.GetType(
+            $"{patchMethod.method.DeclaringType!.FullName}__{patchMethod.method.Name}__Callback", throwOnError: true
+        )!;
+        var ev = callbackType.GetEvent("Callback")!;
 
-        foreach (var ev in events)
-        {
-            if (ev.AddMethod == null)
-                continue;
-            if (ev.RemoveMethod == null)
-                continue;
-            if (ev.AddMethod?.IsStatic != true)
-                continue;
-            
-            if (ev.IsDefined(typeof(WeaverCallbackAttribute), false))
-            {
-                var alc = AssemblyLoadContext.GetLoadContext(type.Module.Assembly);
-                var alcName = alc?.Name;
-                
-                var attr = ev.GetCustomAttribute<WeaverCallbackAttribute>();
-                if (attr == null)
-                    continue;
-                var original = attr.GetOriginalMethod(alcName);
-                if (original == null)
-                    continue;
-                var patchMethod = attr.GetPatchMethod(alcName);
-                if (patchMethod == null)
-                    continue;
-                
-                var patchEntry = new PatchEntry(
-                    original,
-                    patchMethod,
-                    RuntimePreludeMethodUtils.CreateDelegate(patchMethod), 
-                    ev
-                );
-                _patchEntries.Add(patchMethod, patchEntry);
-            }
-        }
+        patchEntry = default;
+        
+        if (ev.AddMethod == null)
+            throw new InvalidOperationException($"Event {ev} has no add method");
+        if (ev.RemoveMethod == null)
+            throw new InvalidOperationException($"Event {ev} has no remove method");
+
+        var delType = original.Module.Assembly.GetType(
+            $"{patchMethod.method.DeclaringType!.FullName}__{patchMethod.method.Name}__DelegateType"
+        )!;
+
+        patchEntry = new PatchEntry(
+            original,
+            patchMethod,
+            patchMethod.method.CreateDelegate(delType), 
+            ev
+        );
+        _patchEntries.Add(patchMethod.method, patchEntry);
     }
     
     private bool IsSubset(IEnumerable<string> xs, IEnumerable<string> ys)
@@ -92,23 +78,6 @@ public class RuntimeWeaverBackend(ILogger logger) : IRuntimeBackend
         if (needle.category != haystack.category)
             return false;
         return true;
-    }
-    
-    private void EnsurePatchEntry(MethodBase original, HarmonyMethod patchMethod, out PatchEntry patchEntry)
-    {
-        if (!_patchEntries.TryGetValue(patchMethod.method, out patchEntry))
-        {
-            EnsureTypeContainer(patchMethod.method.DeclaringType!);
-            if (!_patchEntries.TryGetValue(patchMethod.method, out patchEntry))
-                throw new InvalidOperationException($"Patch method {patchMethod.Description()} not found");
-        }
-        
-        if (!IsMatching(patchMethod, patchEntry.PatchInfo))
-            throw new InvalidOperationException($"Patch method {patchMethod.Description()} does not match the registered entry {patchEntry.PatchInfo.Description()}");
-        
-        var patchOriginal = patchEntry.Original;
-        if (original != patchOriginal)
-            throw new InvalidOperationException($"Patch method {original.FullDescription()} does not match the registered original method {patchOriginal.FullDescription()}");
     }
 
     private void DoPatch(MethodBase original, HarmonyMethod patchMethod)

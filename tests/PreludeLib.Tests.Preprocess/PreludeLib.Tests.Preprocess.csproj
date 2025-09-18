@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
         <TargetFramework>net8.0</TargetFramework>
@@ -22,12 +22,7 @@
         <ProjectReference Include="..\..\src\Harmony\LocalMonoMod\src\MonoMod.RuntimeDetour\MonoMod.RuntimeDetour.csproj" />
         <ProjectReference Include="..\..\src\Harmony\Lib.Harmony\Lib.Harmony.csproj" />
         <ProjectReference Include="..\..\src\PreludeLib\PreludeLib.csproj" />
-        <ProjectReference Include="..\PreludeLib.Tests.Preprocess\PreludeLib.Tests.Preprocess.csproj" />
         <ProjectReference Include="..\PreludeLib.Tests.Utils\PreludeLib.Tests.Utils.csproj" />
-    </ItemGroup>
-    
-    <ItemGroup>
-        <Using Include="Xunit" />
     </ItemGroup>
 
 </Project>

@@ -1,5 +1,6 @@
 ﻿using System.Reflection;
 using HarmonyLib;
+using PreludeLib.Attributes;
 using PreludeLib.Tests.Examples;
 
 namespace PreludeLib.Tests.Patches.OverloadArg;
@@ -10,6 +11,7 @@ namespace PreludeLib.Tests.Patches.OverloadArg;
 [HarmonyPatch(typeof(OverloadArgTargets))]
 public static class TryMakeOutOverloadPrefixPatch
 {
+    [HarmonyTargetMethodHint(nameof(OverloadArgTargets.TryMake), [typeof(Out<int>)])]
     static MethodBase TargetMethod()
         => AccessTools.Method(typeof(OverloadArgTargets),
             nameof(OverloadArgTargets.TryMake),

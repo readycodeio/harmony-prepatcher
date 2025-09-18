@@ -2,9 +2,9 @@
 using PreludeLib.Runtime.Backend;
 using PreludeLib.Runtime.Backend.WeaverCallback;
 
-namespace PreludeLib.Payload.Simple;
+namespace PreludeLib.Payload.SpecialInjection;
 
-public class WeaverSimplePayload(ILogger logger) : SimplePayloadBase(true, logger)
+public class WeaverSpecialInjectionPayload(ILogger logger) : SpecialInjectionPayloadBase(true, logger)
 {
     protected override IRuntimeBackend CreateBackend()
         => new RuntimeWeaverBackend(Logger);

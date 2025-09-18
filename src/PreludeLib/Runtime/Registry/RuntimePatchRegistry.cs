@@ -30,6 +30,22 @@ public class RuntimePatchRegistry : IRuntimePatchRegistry
         public readonly List<PatchEntry> RemovedPostfixes = [];
         public readonly List<PatchEntry> RemovedFinalizers = [];
     }
+    
+    private struct PatchMethodEntry(HarmonyMethod patchMethod)
+    {
+        public readonly HarmonyMethod PatchMethod = patchMethod;
+        
+        public MethodInfo? PrepareCallback;
+        public MethodInfo? CleanupCallback;
+    }
+    
+    private struct ContainerTypeEntry(Type containerType)
+    {
+        public readonly Type ContainerType = containerType;
+        
+        public MethodInfo? PrepareCallback;
+        public MethodInfo? CleanupCallback;
+    }
 
     private readonly List<MethodBase> _allOriginals = [];
     private readonly List<MethodBase> _addedOriginals = [];
@@ -37,6 +53,8 @@ public class RuntimePatchRegistry : IRuntimePatchRegistry
     private readonly List<string> _ids = [];
     private readonly List<string> _addedIds = [];
     private readonly Dictionary<MethodBase, OriginalMethodEntry> _originalEntries = [];
+    private readonly Dictionary<MethodInfo, PatchMethodEntry> _patchMethodEntries = [];
+    private readonly Dictionary<Type, ContainerTypeEntry> _containerTypeEntries = [];
 
     public IEnumerable<MethodBase> GetOriginalMethods()
         => _allOriginals;
@@ -207,6 +225,30 @@ public class RuntimePatchRegistry : IRuntimePatchRegistry
         };
     }
 
+    public MethodInfo? GetPrepareContainerTypeCallback(Type containerType)
+    {
+        EnsureContainerTypeEntry(containerType, out var entry);
+        return entry.PrepareCallback;
+    }
+
+    public MethodInfo? GetCleanupContainerTypeCallback(Type containerType)
+    {
+        EnsureContainerTypeEntry(containerType, out var entry);
+        return entry.CleanupCallback;
+    }
+
+    public MethodInfo? GetPreparePatchMethodCallback(HarmonyMethod patchMethod)
+    {
+        EnsurePatchMethodEntry(patchMethod.method, out var entry);
+        return entry.PrepareCallback;
+    }
+
+    public MethodInfo? GetCleanupPatchMethodCallback(HarmonyMethod patchMethod)
+    {
+        EnsurePatchMethodEntry(patchMethod.method, out var entry);
+        return entry.CleanupCallback;
+    }
+
     public void AddOriginalMethod(MethodBase original)
     {
         if (_originalEntries.ContainsKey(original))
@@ -218,10 +260,32 @@ public class RuntimePatchRegistry : IRuntimePatchRegistry
         _originalEntries.Add(original, entry);
     }
 
+    public void AddContainerType(Type type)
+    {
+        if (_containerTypeEntries.ContainsKey(type))
+            return;
+        var entry = new ContainerTypeEntry(type);
+        _containerTypeEntries.Add(type, entry);
+    }
+
     private void EnsureOriginalMethodEntry(MethodBase original, out OriginalMethodEntry entry)
     {
         if (!_originalEntries.TryGetValue(original, out var e))
             throw new ArgumentException($"Original method not registered: {original.FullDescription()}");
+        entry = e;
+    }
+
+    private void EnsureContainerTypeEntry(Type type, out ContainerTypeEntry entry)
+    {
+        if (!_containerTypeEntries.TryGetValue(type, out var e))
+            throw new ArgumentException($"Container type method not registered: {type.FullDescription()}");
+        entry = e;
+    }
+
+    private void EnsurePatchMethodEntry(MethodInfo patch, out PatchMethodEntry entry)
+    {
+        if (!_patchMethodEntries.TryGetValue(patch, out var e))
+            throw new ArgumentException($"Container type method not registered: {patch.FullDescription()}");
         entry = e;
     }
 
