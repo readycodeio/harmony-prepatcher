@@ -5,6 +5,7 @@ using Mono.Cecil;
 using Mono.Cecil.Cil;
 using Mono.Cecil.Rocks;
 using MonoMod.Utils;
+using PreludeLib.Compat;
 using PreludeLib.CompileTime.Public;
 using PreludeLib.CompileTime.Utils;
 using static PreludeLib.CompileTime.Utils.CompileTimePreludeCecilUtils;

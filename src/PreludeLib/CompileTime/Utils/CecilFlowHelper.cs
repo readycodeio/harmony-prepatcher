@@ -1,4 +1,5 @@
 ﻿using Mono.Cecil.Cil;
+using PreludeLib.Compat;
 
 namespace PreludeLib.CompileTime.Utils;
 

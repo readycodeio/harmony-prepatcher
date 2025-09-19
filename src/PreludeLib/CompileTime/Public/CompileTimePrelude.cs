@@ -24,7 +24,7 @@ public class CompileTimePrelude : ICompileTimeRegistryBuilder
     public void ScanAndPatchAll(AssemblyDefinition patchAssemblyDef)
         => _builder.ScanAndPatchAll(patchAssemblyDef);
 
-    public void ScanAndPatchCategory(AssemblyDefinition patchAssemblyDef, string category)
+    public void ScanAndPatchCategory(AssemblyDefinition patchAssemblyDef, string? category)
         => _builder.ScanAndPatchCategory(patchAssemblyDef, category);
 
     public void ScanAndPatchUncategorized(AssemblyDefinition patchAssemblyDef)

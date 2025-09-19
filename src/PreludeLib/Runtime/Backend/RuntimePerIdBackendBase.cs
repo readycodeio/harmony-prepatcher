@@ -72,14 +72,14 @@ public abstract class RuntimePerIdPatchBackendBase(ILogger logger) : IRuntimeBac
 						    originals.Add(original);
 						}
 					    
-					    if (entries.Count == 0 || entries[^1].Id != id)
+					    if (entries.Count == 0 || entries[entries.Count - 1].Id != id)
 					    {
 						    entry = (new List<PatchGroup>(), new List<PatchTarget>(), new List<PatchTarget>());
 						    entries.Add((id, entry));
 					    }
 					    else
 					    {
-						    entry = entries[^1].Entry;
+						    entry = entries[entries.Count - 1].Entry;
 					    }
 
 					    if (!entry.Groups.Contains(group))
