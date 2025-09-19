@@ -6,82 +6,80 @@ using PreludeLib.Runtime.Registry;
 
 namespace PreludeLib.Runtime.Backend.HarmonyDetour;
 
-public class RuntimeHarmonyBackend(ILogger logger) : IRuntimeBackend
+public class RuntimeHarmonyBackend(ILogger logger) : RuntimePerIdPatchBackendBase(logger)
 {
     private readonly Dictionary<string, Harmony> _harmonyInstances = [];
 
-    public void Commit(IRuntimePatchRegistry registry)
+    protected override void DoPatch(
+        MethodBase original,
+        List<HarmonyMethod> prefixes, 
+        List<HarmonyMethod> postfixes,
+        List<HarmonyMethod> finalizers,
+        List<HarmonyMethod> addedPrefixes,
+        List<HarmonyMethod> addedPostfixes,
+        List<HarmonyMethod> addedFinalizers,
+        List<HarmonyMethod> removedPrefixes,
+        List<HarmonyMethod> removedPostfixes,
+        List<HarmonyMethod> removedFinalizers,
+        string id
+    )
     {
-        PatchFunctions.LoggerFunc = logger.LogDebug;
+        var harmony = GetHarmonyInstance(id);
+        
+        foreach (var patchMethod in removedPrefixes)
+        {
+            logger.LogInformation("Unpatching {Original} prefix {Prefix}", original, patchMethod.method);
+            harmony.Unpatch(original, patchMethod.method);
+        }
 
+        foreach (var patchMethod in removedPostfixes)
+        {
+            logger.LogInformation("Unpatching {Original} postfix {Postfix}", original, patchMethod.method);
+            harmony.Unpatch(original, patchMethod.method);
+        }
+
+        foreach (var patchMethod in removedFinalizers)
+        {
+            logger.LogInformation("Unpatching {Original} finalizer {Finalizer}", original, patchMethod.method);
+            harmony.Unpatch(original, patchMethod.method);
+        }
+        
+        foreach (var patchMethod in addedPrefixes)
+        {
+            Logger.LogInformation("Patching {Original} prefix {Prefix}", original, patchMethod.method);
+            harmony.Patch(original, prefix: patchMethod);
+        }
+
+        foreach (var patchMethod in addedPostfixes)
+        {
+            Logger.LogInformation("Patching {Original} postfix {Postfix}", original, patchMethod.method);
+            harmony.Patch(original, postfix: patchMethod); 
+        }
+
+        foreach (var patchMethod in addedFinalizers)
+        {
+            Logger.LogInformation("Patching {Original} finalizer {Finalizer}", original, patchMethod.method);
+            harmony.Patch(original, finalizer: patchMethod);
+        }
+    }
+
+    protected override Harmony GetHarmonyInstance(string id)
+    {
+        if (!_harmonyInstances.TryGetValue(id, out var harmony))
+        {
+            harmony = new Harmony(id);
+            _harmonyInstances[id] = harmony;
+        }
+
+        return harmony;
+    }
+
+    public override void Commit(IRuntimePatchRegistry registry)
+    {
+        PatchFunctions.LoggerFunc = Logger.LogDebug;
         try
         {
-            foreach (var id in registry.GetIds())
-            {
-                if (!_harmonyInstances.TryGetValue(id, out var harmony))
-                {
-                    harmony = new Harmony(id);
-                    _harmonyInstances.Add(id, harmony);
-                }
-
-                foreach (var group in registry.GetGroups())
-                {
-                    var context = new AuxiliaryMethodCallContext(harmony, group.ContainerType, null, null, logger);
-
-                    foreach (var target in registry.GetTargets(group))
-                    {
-                        var originals = RuntimeBackendUtils.GetTargetOriginals(target, context);
-
-                        foreach (var original in originals)
-                        {
-                            foreach (var patchMethod in registry.GetRemovedPrefixMethods(target, id))
-                            {
-                                logger.LogInformation("Unpatching {Original} prefix {Prefix}", target, patchMethod.method);
-                                harmony.Unpatch(original, patchMethod.method);
-                            }
-
-                            foreach (var patchMethod in registry.GetRemovedPostfixMethods(target, id))
-                            {
-                                logger.LogInformation("Unpatching {Original} postfix {Postfix}", target, patchMethod.method);
-                                harmony.Unpatch(original, patchMethod.method);
-                            }
-
-                            foreach (var patchMethod in registry.GetRemovedFinalizerMethods(target, id))
-                            {
-                                logger.LogInformation("Unpatching {Original} finalizer {Finalizer}", target, patchMethod.method);
-                                harmony.Unpatch(original, patchMethod.method);
-                            }
-
-                            foreach (var patchMethod in registry.GetAddedPrefixMethods(target, id))
-                            {
-                                logger.LogInformation("Patching {Original} prefix {Prefix}", target, patchMethod.method);
-                                PrepareCleanupPatchMethodBlock(registry, group, original, id, patchMethod, () =>
-                                {
-                                    harmony.Patch(original, prefix: patchMethod);
-                                });
-                            }
-
-                            foreach (var patchMethod in registry.GetAddedPostfixMethods(target, id))
-                            {
-                                logger.LogInformation("Patching {Original} postfix {Postfix}", target, patchMethod.method);
-                                PrepareCleanupPatchMethodBlock(registry, group, original, id, patchMethod, () =>
-                                {
-                                    harmony.Patch(original, postfix: patchMethod); 
-                                });
-                            }
-
-                            foreach (var patchMethod in registry.GetAddedFinalizerMethods(target, id))
-                            {
-                                logger.LogInformation("Patching {Original} finalizer {Finalizer}", target, patchMethod.method);
-                                PrepareCleanupPatchMethodBlock(registry, group, original, id, patchMethod, () =>
-                                {
-                                    harmony.Patch(original, finalizer: patchMethod);
-                                });
-                            }
-                        }
-                    }
-                }
-            }
+            base.Commit(registry);
         }
         finally
         {
@@ -109,11 +107,11 @@ public class RuntimeHarmonyBackend(ILogger logger) : IRuntimeBackend
     public bool PrepareGroup(IRuntimePatchRegistry registry, out Exception? exception, PatchGroup group, string id)
     {
         var harmony = _harmonyInstances[id];
-        var context = new AuxiliaryMethodCallContext(harmony, group.ContainerType, null, null!, logger);
+        var context = new RuntimeAuxiliaryMethodContext(harmony, group.ContainerType, null, null!, Logger);
         try
         {
             exception = null;
-            var callback = registry.GetPrepareGroupCallback(group);
+            var callback = registry.GetPrepareGroupCallback(group, id);
             return RunMethod<bool>(callback, true, false, context, parameters: [harmony]);
         }
         catch (Exception ex)
@@ -126,10 +124,10 @@ public class RuntimeHarmonyBackend(ILogger logger) : IRuntimeBackend
     public void CleanupGroup(IRuntimePatchRegistry registry, Exception? exception, PatchGroup group, string id)
     {
         var harmony = _harmonyInstances[id];
-        var context = new AuxiliaryMethodCallContext(harmony, group.ContainerType, null, null!, logger);
+        var context = new RuntimeAuxiliaryMethodContext(harmony, group.ContainerType, null, null!, Logger);
         try
         {
-            var callback = registry.GetCleanupGroupCallback(group);
+            var callback = registry.GetCleanupGroupCallback(group, id);
             RunMethod(callback, ref exception, context, parameters: [exception, harmony]);
         }
         catch (Exception ex)
@@ -162,11 +160,11 @@ public class RuntimeHarmonyBackend(ILogger logger) : IRuntimeBackend
     public bool PreparePatchMethod(IRuntimePatchRegistry registry, out Exception? exception, PatchGroup group, MethodBase original, string id, HarmonyMethod patchMethod)
     {
         var harmony = _harmonyInstances[id];
-        var context = new AuxiliaryMethodCallContext(harmony, group.ContainerType, original, patchMethod.method, logger);
+        var context = new RuntimeAuxiliaryMethodContext(harmony, group.ContainerType, original, patchMethod.method, Logger);
         try
         {
             exception = null;
-            var callback = registry.GetCleanupPatchMethodCallback(patchMethod);
+            var callback = registry.GetCleanupPatchMethodCallback(patchMethod, id);
             return RunMethod<bool>(callback, true, false, context, parameters: [harmony, original]);
         }
         catch (Exception ex)
@@ -179,10 +177,10 @@ public class RuntimeHarmonyBackend(ILogger logger) : IRuntimeBackend
     public void CleanupPatchMethod(IRuntimePatchRegistry registry, Exception? exception, PatchGroup group, MethodBase original, string id, HarmonyMethod patchMethod)
     {
         var harmony = _harmonyInstances[id];
-        var context = new AuxiliaryMethodCallContext(harmony, group.ContainerType, original, patchMethod.method, logger);
+        var context = new RuntimeAuxiliaryMethodContext(harmony, group.ContainerType, original, patchMethod.method, Logger);
         try
         {
-            var callback = registry.GetCleanupPatchMethodCallback(patchMethod);
+            var callback = registry.GetCleanupPatchMethodCallback(patchMethod, id);
             RunMethod(callback, ref exception, context, parameters: [original, exception, harmony]);
         }
         catch (Exception ex)
@@ -196,7 +194,7 @@ public class RuntimeHarmonyBackend(ILogger logger) : IRuntimeBackend
     }
     
     [SuppressMessage("Style", "IDE0300")]
-    private T RunMethod<T>(MethodInfo? callback, T defaultIfNotExisting, T defaultIfFailing, AuxiliaryMethodCallContext context, Func<T, string>? failOnResult = null, params object[]? parameters)
+    private T RunMethod<T>(MethodInfo? callback, T defaultIfNotExisting, T defaultIfFailing, RuntimeAuxiliaryMethodContext context, Func<T, string>? failOnResult = null, params object[]? parameters)
     {
         if (callback != null)
         {
@@ -234,7 +232,7 @@ public class RuntimeHarmonyBackend(ILogger logger) : IRuntimeBackend
     }
 
     [SuppressMessage("Style", "IDE0300")]
-    private void RunMethod(MethodInfo? callback, ref Exception? exception, AuxiliaryMethodCallContext context, params object?[]? parameters)
+    private void RunMethod(MethodInfo? callback, ref Exception? exception, RuntimeAuxiliaryMethodContext context, params object?[]? parameters)
     {
         if (callback != null)
         {
@@ -252,15 +250,15 @@ public class RuntimeHarmonyBackend(ILogger logger) : IRuntimeBackend
         }
     }
     
-    private void ReportException(Exception? exception, AuxiliaryMethodCallContext context)
+    private void ReportException(Exception? exception, RuntimeAuxiliaryMethodContext context)
     {
         if (exception is null)
             return;
         _ = Harmony.VersionInfo(out var currentVersion);
 
-        logger.LogDebug($"### Exception from user \"{context.HarmonyInstance.Id}\", Harmony v{currentVersion}");
-        logger.LogDebug($"### Original: {(context.Original?.FullDescription() ?? "NULL")}");
-        logger.LogDebug($"### Patch class: {context.ContainerType.FullDescription()}");
+        Logger.LogDebug($"### Exception from user \"{context.HarmonyInstance.Id}\", Harmony v{currentVersion}");
+        Logger.LogDebug($"### Original: {(context.Original?.FullDescription() ?? "NULL")}");
+        Logger.LogDebug($"### Patch class: {context.ContainerType.FullDescription()}");
         var logException = exception;
         if (logException is HarmonyException hEx)
             logException = hEx.InnerException!;
@@ -268,7 +266,7 @@ public class RuntimeHarmonyBackend(ILogger logger) : IRuntimeBackend
         while (exStr.Contains("\n\n"))
             exStr = exStr.Replace("\n\n", "\n");
         exStr = exStr.Split('\n').Join(line => $"### {line}", "\n");
-        logger.LogDebug(exStr.Trim());
+        Logger.LogDebug(exStr.Trim());
 
         if (exception is HarmonyException)
             throw exception; // assume HarmonyException already wraps the actual exception

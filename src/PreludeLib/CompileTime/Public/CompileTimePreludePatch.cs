@@ -5,7 +5,7 @@ using PreludeLib.CompileTime.Utils;
 
 namespace PreludeLib.CompileTime.Public;
 
-public class CompileTimePreludePatch(HarmonyPatchType patchType, CompileTimePreludeMethod patchMethod)
+public class CompileTimeAttributePatch(HarmonyPatchType patchType, CompileTimePreludeMethod info)
 {
     private static readonly HarmonyPatchType[] AllPatchTypes = [
         HarmonyPatchType.Prefix,
@@ -18,9 +18,9 @@ public class CompileTimePreludePatch(HarmonyPatchType patchType, CompileTimePrel
     ];
 
     public readonly HarmonyPatchType PatchType = patchType;
-    public CompileTimePreludeMethod PatchMethod = patchMethod;
+    public CompileTimePreludeMethod Info = info;
 
-    public static CompileTimePreludePatch? Create(MethodDefinition patchMethodDef)
+    public static CompileTimeAttributePatch? Create(MethodDefinition patchMethodDef)
     {
         if (patchMethodDef is null)
             throw new NullReferenceException("Patch method cannot be null");
@@ -50,7 +50,7 @@ public class CompileTimePreludePatch(HarmonyPatchType patchType, CompileTimePrel
         var info = CompileTimePreludeMethod.Merge(list);
         info.Method = patchMethodDef;
 
-        return new CompileTimePreludePatch(type.Value, info);
+        return new CompileTimeAttributePatch(type.Value, info);
     }
     
     public static HarmonyPatchType? GetPatchType(string methodName, List<CustomAttribute> allAttributes)

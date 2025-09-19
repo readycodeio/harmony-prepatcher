@@ -87,7 +87,7 @@ public static class CompileTimeAccessTools
         if (typeDef is null)
             return null;
         parameterRefs ??= [];
-        return typeDef.GetMethods().FirstOrDefault(x =>
+        return typeDef.GetConstructors().FirstOrDefault(x =>
         {
             if (x.Name != ".ctor")
                 return false;
@@ -115,6 +115,32 @@ public static class CompileTimeAccessTools
         if (typeDef is null)
             return [];
         return typeDef.GetMethods().Where(x => x.Name == ".ctor");
+    }
+    
+    public static List<MethodDefinition> GetDeclaredMethods(TypeReference? typeRef)
+    {
+        var typeDef = typeRef?.Resolve();
+        return GetDeclaredMethods(typeDef);
+    }
+    
+    public static List<MethodDefinition> GetDeclaredMethods(TypeDefinition? typeDef)
+    {
+        if (typeDef is null)
+            return [];
+        return [.. typeDef.GetMethods()];
+    }
+    
+    public static List<PropertyDefinition> GetDeclaredProperties(TypeReference? typeRef)
+    {
+        var typeDef = typeRef?.Resolve();
+        return GetDeclaredProperties(typeDef);
+    }
+    
+    public static List<PropertyDefinition> GetDeclaredProperties(TypeDefinition? typeDef)
+    {
+        if (typeDef is null)
+            return [];
+        return [.. typeDef.Properties];
     }
 
     public static MethodReference? EnumeratorMoveNext(MethodReference? methodRef)

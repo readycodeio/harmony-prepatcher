@@ -124,7 +124,7 @@ public abstract class SimplePayloadBase(bool shouldPass, ILogger logger) : Backe
         Assert.NotNull(originalDivide);
 
         var finalizer = new HarmonyMethod(typeof(CalculatorPatches).GetMethod(nameof(CalculatorPatches.DivideFinalizer), BindingFlags.Public | BindingFlags.Static)!);
-        builder.Patch(PatchTarget.FromOriginal(originalDivide), finalizer: finalizer);
+        builder.Patch(PatchTarget.FromOriginal(originalDivide, default), finalizer: finalizer);
         owner.Commit();
 
         try

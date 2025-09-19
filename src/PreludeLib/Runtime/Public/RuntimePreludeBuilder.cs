@@ -1,5 +1,6 @@
 ﻿using System.Reflection;
 using HarmonyLib;
+using PreludeLib.Common;
 using PreludeLib.Runtime.Internal;
 using PreludeLib.Runtime.Registry;
 
@@ -14,7 +15,7 @@ public class RuntimePreludeBuilder(RuntimePrelude owner, string id, IRuntimePatc
     public void ScanAndPatchAll(Assembly patchAssembly)
         => _builder.ScanAndPatchAll(patchAssembly);
 
-    public void ScanAndPatchCategory(Assembly patchAssembly, string? category)
+    public void ScanAndPatchCategory(Assembly patchAssembly, Category category)
         => _builder.ScanAndPatchCategory(patchAssembly, category);
 
     public void ScanAndPatchUncategorized(Assembly patchAssembly)
@@ -28,21 +29,41 @@ public class RuntimePreludeBuilder(RuntimePrelude owner, string id, IRuntimePatc
         HarmonyMethod? prefix = null,
         HarmonyMethod? postfix = null,
         HarmonyMethod? finalizer = null,
+        HarmonyMethod? transpiler = null)
+        => _builder.Patch(target, prefix, postfix, finalizer, transpiler);
+
+    public void Patch(
+        MethodBase original,
+        HarmonyMethod? prefix = null,
+        HarmonyMethod? postfix = null,
+        HarmonyMethod? finalizer = null,
         HarmonyMethod? transpiler = null,
         PatchGroup group = default)
-        => _builder.Patch(target, prefix, postfix, finalizer, transpiler, group);
+        => _builder.Patch(original, prefix, postfix, finalizer, transpiler, group);
 
-    public void Patch(PatchTarget target, HarmonyPatchType patchType, HarmonyMethod patchMethod, PatchGroup group = default)
-        => _builder.Patch(target, patchType, patchMethod, group);
+    public void Patch(PatchTarget target, HarmonyPatchType patchType, HarmonyMethod patchMethod)
+        => _builder.Patch(target, patchType, patchMethod);
+    
+    public void Patch(MethodBase original, HarmonyPatchType patchType, HarmonyMethod patchMethod, PatchGroup group = default)
+        => _builder.Patch(original, patchType, patchMethod, group);
 
-    public void PatchPrefix(PatchTarget target, HarmonyMethod prefix, PatchGroup group = default)
-        => _builder.PatchPrefix(target, prefix, group);
+    public void PatchPrefix(PatchTarget target, HarmonyMethod prefix)
+        => _builder.PatchPrefix(target, prefix);
 
-    public void PatchPostfix(PatchTarget target, HarmonyMethod prefix, PatchGroup group = default)
-        => _builder.PatchPostfix(target, prefix, group);
+    public void PatchPrefix(MethodBase original, HarmonyMethod prefix, PatchGroup group = default)
+        => _builder.PatchPrefix(original, prefix, group);
 
-    public void PatchFinalizer(PatchTarget target, HarmonyMethod prefix, PatchGroup group = default)
-        => _builder.PatchFinalizer(target, prefix, group);
+    public void PatchPostfix(PatchTarget target, HarmonyMethod postfix)
+        => _builder.PatchPostfix(target, postfix);
+
+    public void PatchPostfix(MethodBase original, HarmonyMethod postfix, PatchGroup group = default)
+        => _builder.PatchPostfix(original, postfix, group);
+
+    public void PatchFinalizer(PatchTarget target, HarmonyMethod finalizer)
+        => _builder.PatchFinalizer(target, finalizer);
+
+    public void PatchFinalizer(MethodBase original, HarmonyMethod finalizer, PatchGroup group = default)
+        => _builder.PatchFinalizer(original, finalizer, group);
 
     public void UnpatchAll()
         => _builder.UnpatchAll();
@@ -50,13 +71,13 @@ public class RuntimePreludeBuilder(RuntimePrelude owner, string id, IRuntimePatc
     public void UnpatchAll(Assembly patchAssembly)
         => _builder.UnpatchAll(patchAssembly);
 
-    public void UnpatchCategory(Assembly patchAssembly, string category)
+    public void UnpatchCategory(Assembly patchAssembly, Category category)
         => _builder.UnpatchCategory(patchAssembly, category);
 
     public void UnpatchUncategorized(Assembly patchAssembly)
         => _builder.UnpatchUncategorized(patchAssembly);
 
-    public void UnpatchCategory(string category)
+    public void UnpatchCategory(Category category)
         => _builder.UnpatchCategory(category);
 
     public void UnpatchUncategorized()
@@ -65,6 +86,12 @@ public class RuntimePreludeBuilder(RuntimePrelude owner, string id, IRuntimePatc
     public void Unpatch(PatchTarget target, HarmonyPatchType patchType)
         => _builder.Unpatch(target, patchType);
 
+    public void Unpatch(MethodBase original, HarmonyPatchType patchType, PatchGroup group)
+        => _builder.Unpatch(PatchTarget.FromOriginal(original, group), patchType);
+
     public void Unpatch(PatchTarget target, MethodInfo patch)
         => _builder.Unpatch(target, patch);
+
+    public void Unpatch(MethodBase original, MethodInfo patch, PatchGroup group)
+        => _builder.Unpatch(PatchTarget.FromOriginal(original, group), patch);
 }

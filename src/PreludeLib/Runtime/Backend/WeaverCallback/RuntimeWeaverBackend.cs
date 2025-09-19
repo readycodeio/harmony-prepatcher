@@ -5,7 +5,7 @@ using PreludeLib.Runtime.Registry;
 
 namespace PreludeLib.Runtime.Backend.WeaverCallback;
 
-public class RuntimeWeaverBackend(ILogger logger) : IRuntimeBackend
+public class RuntimeWeaverBackend(ILogger logger) : RuntimeGlobalPatchBackendBase(logger)
 {
     private readonly struct PatchEntry(MethodBase original, HarmonyMethod patchInfo, Delegate del, EventInfo ev)
     {
@@ -90,58 +90,46 @@ public class RuntimeWeaverBackend(ILogger logger) : IRuntimeBackend
         EnsurePatchEntry(original, patchMethod.method, out var patchEntry);
         patchEntry.Event.RemoveEventHandler(null, patchEntry.Del);
     }
-    
-    public void Commit(IRuntimePatchRegistry registry)
-    {
-        foreach (var id in registry.GetIds())
-        {
-            foreach (var group in registry.GetGroups())
-            {
-                foreach (var target in registry.GetTargets(group))
-                {
-                    var context = new AuxiliaryMethodCallContext(null!, group.ContainerType, null, null, logger);
-                    var originals = RuntimeBackendUtils.GetTargetOriginals(target, context);
 
-                    foreach (var original in originals)
-                    {
-                        foreach (var patchMethod in registry.GetRemovedPrefixMethods(target, id))
-                        {
-                            logger.LogInformation("Unpatching {Original} prefix {Prefix}", target, patchMethod.method);
-                            DoUnpatch(original, patchMethod.method);
-                        }
-                    
-                        foreach (var patchMethod in registry.GetRemovedPostfixMethods(target, id))
-                        {
-                            logger.LogInformation("Unpatching {Original} postfix {Postfix}", target, patchMethod.method);
-                            DoUnpatch(original, patchMethod.method);
-                        }
-                    
-                        foreach (var patchMethod in registry.GetRemovedFinalizerMethods(target, id))
-                        {
-                            logger.LogInformation("Unpatching {Original} finalizer {Finalizer}", target, patchMethod.method);
-                            DoUnpatch(original, patchMethod.method);
-                        }
-                    
-                        foreach (var patchMethod in registry.GetAddedPrefixMethods(target, id))
-                        {
-                            logger.LogInformation("Patching {Original} prefix {Prefix}", target, patchMethod.method);
-                            DoPatch(original, patchMethod);
-                        }
-                    
-                        foreach (var patchMethod in registry.GetAddedPostfixMethods(target, id))
-                        {
-                            logger.LogInformation("Patching {Original} postfix {Postfix}", target, patchMethod.method);
-                            DoPatch(original, patchMethod);
-                        }
-                    
-                        foreach (var patchMethod in registry.GetAddedFinalizerMethods(target, id))
-                        {
-                            logger.LogInformation("Patching {Original} finalizer {Finalizer}", target, patchMethod.method);
-                            DoPatch(original, patchMethod);
-                        }
-                    }
-                }
-            }
+    protected override void DoPatch(
+        MethodBase original,
+        List<HarmonyMethod> prefixes,
+        List<HarmonyMethod> postfixes,
+        List<HarmonyMethod> finalizers,
+        List<HarmonyMethod> addedPrefixes,
+        List<HarmonyMethod> addedPostfixes,
+        List<HarmonyMethod> addedFinalizers,
+        List<HarmonyMethod> removedPrefixes,
+        List<HarmonyMethod> removedPostfixes,
+        List<HarmonyMethod> removedFinalizers)
+    {
+        foreach (var patchMethod in removedPrefixes)
+        {
+            DoUnpatch(original, patchMethod);
+        }
+        foreach (var patchMethod in removedPostfixes)
+        {
+            DoUnpatch(original, patchMethod);
+        }
+        foreach (var patchMethod in removedFinalizers)
+        {
+            DoUnpatch(original, patchMethod);
+        }
+        
+        foreach (var patchMethod in addedPrefixes)
+        {
+            DoPatch(original, patchMethod);
+        }
+        foreach (var patchMethod in addedPostfixes)
+        {
+            DoPatch(original, patchMethod);
+        }
+        foreach (var patchMethod in addedFinalizers)
+        {
+            DoPatch(original, patchMethod);
         }
     }
+
+    protected override Harmony GetHarmonyInstance(string id)
+        => null!;
 }

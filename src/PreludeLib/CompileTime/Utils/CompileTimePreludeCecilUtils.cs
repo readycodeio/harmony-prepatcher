@@ -28,10 +28,10 @@ public static class CompileTimePreludeCecilUtils
 	        return f.FieldType.FullName == typeof(HarmonyMethod).FullName;
         });
     
-    public static List<CompileTimePreludePatch> GetPatches(ModuleDefinition moduleDef, TypeDefinition typeDef)
+    public static List<CompileTimeAttributePatch> GetPatches(ModuleDefinition moduleDef, TypeDefinition typeDef)
     {
         return [.. typeDef.Methods
-            .Select(CompileTimePreludePatch.Create)
+            .Select(CompileTimeAttributePatch.Create)
             .Where(attributePatch => attributePatch is not null)!];
     }
     
@@ -211,12 +211,5 @@ public static class CompileTimePreludeCecilUtils
 	    }
 
 	    return name;
-    }
-
-	internal static List<CompileTimePreludePatch> GetPatchMethods(TypeDefinition typeDef)
-	{
-	    return [.. typeDef.Methods
-		    .Select(CompileTimePreludePatch.Create)
-		    .Where(attributePatch => attributePatch is not null)!];
     }
 }

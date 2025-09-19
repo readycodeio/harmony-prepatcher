@@ -1,13 +1,14 @@
 ﻿using System.Reflection;
 using System.Runtime.CompilerServices;
 using HarmonyLib;
+using PreludeLib.Common;
 using PreludeLib.Runtime.Registry;
 
 namespace PreludeLib.Runtime.Internal;
 
-public class RuntimeRegistryBuilder(string id, IRuntimePatchRegistry registry) : IRuntimeRegistryBuilder
+public class RuntimeRegistryBuilder : IRuntimeRegistryBuilder
 {
-    public string Id { get; } = id;
+    public string Id { get; }
     
     public void ScanAndPatchAll(Assembly patchAssembly)
     {
@@ -17,7 +18,7 @@ public class RuntimeRegistryBuilder(string id, IRuntimePatchRegistry registry) :
         }
     }
 
-    public void ScanAndPatchCategory(Assembly patchAssembly, string? category)
+    public void ScanAndPatchCategory(Assembly patchAssembly, Category category)
     {
         foreach (var type in GetMatchingTypes(patchAssembly, category))
         {
@@ -27,7 +28,7 @@ public class RuntimeRegistryBuilder(string id, IRuntimePatchRegistry registry) :
 
     public void ScanAndPatchUncategorized(Assembly patchAssembly)
     {
-        foreach (var type in GetMatchingTypes(patchAssembly, category: null))
+        foreach (var type in GetMatchingTypes(patchAssembly, category: Category.Uncategorized))
         {
             ScanAndPatch(type);
         }
@@ -44,44 +45,64 @@ public class RuntimeRegistryBuilder(string id, IRuntimePatchRegistry registry) :
         HarmonyMethod? prefix = null,
         HarmonyMethod? postfix = null,
         HarmonyMethod? finalizer = null,
-        HarmonyMethod? transpiler = null, 
-        PatchGroup group = default)
+        HarmonyMethod? transpiler = null)
     {
         if (prefix != null)
-            Patch(target, HarmonyPatchType.Prefix, prefix, group);
+            Patch(target, HarmonyPatchType.Prefix, prefix);
         if (postfix != null)
-            Patch(target, HarmonyPatchType.Postfix, postfix, group);
+            Patch(target, HarmonyPatchType.Postfix, postfix);
         if (finalizer != null)
-            Patch(target, HarmonyPatchType.Finalizer, finalizer, group);
+            Patch(target, HarmonyPatchType.Finalizer, finalizer);
         if (transpiler != null)
-            Patch(target, HarmonyPatchType.Transpiler, transpiler, group);
+            Patch(target, HarmonyPatchType.Transpiler, transpiler);
     }
 
-    public void Patch(PatchTarget target, HarmonyPatchType patchType, HarmonyMethod patchMethod, PatchGroup group = default)
+    public void Patch(
+        MethodBase original,
+        HarmonyMethod? prefix = null,
+        HarmonyMethod? postfix = null,
+        HarmonyMethod? finalizer = null,
+        HarmonyMethod? transpiler = null,
+        PatchGroup group = default)
+        => Patch(PatchTarget.FromOriginal(original, group), prefix, postfix, finalizer, transpiler);
+
+    public void Patch(PatchTarget target, HarmonyPatchType patchType, HarmonyMethod patchMethod)
     {
-        registry.AddGroup(group);
-        registry.AddTarget(group, target);
-        registry.AddPatchMethod(target, Id, patchType, patchMethod);
+        _registry.AddGroup(target.Group, Id);
+        _registry.AddTarget(target, Id);
+        _registry.AddPatchMethod(target, Id, patchType, patchMethod);
     }
 
-    public void PatchPrefix(PatchTarget target, HarmonyMethod prefix, PatchGroup group = default)
-        => Patch(target, HarmonyPatchType.Prefix, prefix, group);
+    public void Patch(MethodBase original, HarmonyPatchType patchType, HarmonyMethod patchMethod, PatchGroup group = default)
+        => Patch(PatchTarget.FromOriginal(original, group), patchType, patchMethod);
 
-    public void PatchPostfix(PatchTarget target, HarmonyMethod prefix, PatchGroup group = default)
-        => Patch(target, HarmonyPatchType.Postfix, prefix, group);
+    public void PatchPrefix(PatchTarget target, HarmonyMethod prefix)
+        => Patch(target, HarmonyPatchType.Prefix, prefix);
 
-    public void PatchFinalizer(PatchTarget target, HarmonyMethod prefix, PatchGroup group = default)
-        => Patch(target, HarmonyPatchType.Finalizer, prefix, group);
+    public void PatchPrefix(MethodBase original, HarmonyMethod prefix, PatchGroup group = default)
+        => Patch(PatchTarget.FromOriginal(original, group), HarmonyPatchType.Prefix, prefix);
+
+    public void PatchPostfix(PatchTarget target, HarmonyMethod postfix)
+        => Patch(target, HarmonyPatchType.Postfix, postfix);
+
+    public void PatchPostfix(MethodBase original, HarmonyMethod postfix, PatchGroup group = default)
+        => Patch(PatchTarget.FromOriginal(original, group), HarmonyPatchType.Postfix, postfix);
+
+    public void PatchFinalizer(PatchTarget target, HarmonyMethod finalizer)
+        => Patch(target, HarmonyPatchType.Finalizer, finalizer);
+
+    public void PatchFinalizer(MethodBase original, HarmonyMethod finalizer, PatchGroup group = default)
+        => Patch(PatchTarget.FromOriginal(original, group), HarmonyPatchType.Finalizer, finalizer);
 
     public void UnpatchAll()
     {
-        foreach (var group in registry.GetGroups())
+        foreach (var group in _registry.GetGroups(Id))
         {
-            foreach (var target in registry.GetTargets(group)) // all originals
+            foreach (var target in _registry.GetTargets(group, Id))
             {
                 foreach (var patchMethod in GetOwnedPatch(target, group))
                 {
-                    registry.RemovePatchMethod(target, Id, patchMethod);
+                    _registry.RemovePatchMethod(target, Id, patchMethod);
                 }
             }
         }
@@ -89,27 +110,27 @@ public class RuntimeRegistryBuilder(string id, IRuntimePatchRegistry registry) :
 
     public void UnpatchAll(Assembly patchAssembly)
     {
-        foreach (var group in registry.GetGroups())
+        foreach (var group in _registry.GetGroups(Id))
         {
-            foreach (var target in registry.GetTargets(group))
+            foreach (var target in _registry.GetTargets(group, Id))
             {
                 foreach (var patchMethod in GetOwnedMatchingPatch(target, group, patchAssembly))
                 {
-                    registry.RemovePatchMethod(target, Id, patchMethod);
+                    _registry.RemovePatchMethod(target, Id, patchMethod);
                 }
             }
         }
     }
 
-    public void UnpatchCategory(Assembly patchAssembly, string category)
+    public void UnpatchCategory(Assembly patchAssembly, Category category)
     {
-        foreach (var group in registry.GetGroups())
+        foreach (var group in _registry.GetGroups(Id))
         {
-            foreach (var target in registry.GetTargets(group))
+            foreach (var target in _registry.GetTargets(group, Id))
             {
                 foreach (var patchMethod in GetOwnedMatchingPatch(target, group, patchAssembly, category))
                 {
-                    registry.RemovePatchMethod(target, Id, patchMethod);
+                    _registry.RemovePatchMethod(target, Id, patchMethod);
                 }
             }
         }
@@ -117,27 +138,27 @@ public class RuntimeRegistryBuilder(string id, IRuntimePatchRegistry registry) :
 
     public void UnpatchUncategorized(Assembly patchAssembly)
     {
-        foreach (var group in registry.GetGroups())
+        foreach (var group in _registry.GetGroups(Id))
         {
-            foreach (var target in registry.GetTargets(group))
+            foreach (var target in _registry.GetTargets(group, Id))
             {
-                foreach (var patchMethod in GetOwnedMatchingPatch(target, group, category: null))
+                foreach (var patchMethod in GetOwnedMatchingPatch(target, group, category: Category.Uncategorized))
                 {
-                    registry.RemovePatchMethod(target, Id, patchMethod);
+                    _registry.RemovePatchMethod(target, Id, patchMethod);
                 }
             }
         }
     }
 
-    public void UnpatchCategory(string category)
+    public void UnpatchCategory(Category category)
     {
-        foreach (var group in registry.GetGroups())
+        foreach (var group in _registry.GetGroups(Id))
         {
-            foreach (var target in registry.GetTargets(group))
+            foreach (var target in _registry.GetTargets(group, Id))
             {
                 foreach (var patchMethod in GetOwnedMatchingPatch(target, group, category))
                 {
-                    registry.RemovePatchMethod(target, Id, patchMethod);
+                    _registry.RemovePatchMethod(target, Id, patchMethod);
                 }
             }
         }
@@ -145,13 +166,13 @@ public class RuntimeRegistryBuilder(string id, IRuntimePatchRegistry registry) :
 
     public void UnpatchUncategorized()
     {
-        foreach (var group in registry.GetGroups())
+        foreach (var group in _registry.GetGroups(Id))
         {
-            foreach (var target in registry.GetTargets(group))
+            foreach (var target in _registry.GetTargets(group, Id))
             {
-                foreach (var patchMethod in GetOwnedMatchingPatch(target, group, category: null))
+                foreach (var patchMethod in GetOwnedMatchingPatch(target, group, category: Category.Uncategorized))
                 {
-                    registry.RemovePatchMethod(target, Id, patchMethod);
+                    _registry.RemovePatchMethod(target, Id, patchMethod);
                 }
             }
         }
@@ -159,25 +180,31 @@ public class RuntimeRegistryBuilder(string id, IRuntimePatchRegistry registry) :
 
     public void Unpatch(PatchTarget target, HarmonyPatchType patchType)
     {
-        registry.RemovePatchMethod(target, Id, patchType);
+        _registry.RemovePatchMethod(target, Id, patchType);
     }
+
+    public void Unpatch(MethodBase original, HarmonyPatchType patchType, PatchGroup group = default)
+        => Unpatch(PatchTarget.FromOriginal(original, group), patchType);
 
     public void Unpatch(PatchTarget target, MethodInfo patch)
     {
-        registry.RemovePatchMethod(target, Id, patch);
+        _registry.RemovePatchMethod(target, Id, patch);
     }
-    
+
+    public void Unpatch(MethodBase original, MethodInfo patch, PatchGroup group = default)
+        => Unpatch(PatchTarget.FromOriginal(original, group), patch);
+
     // ---
 
     private IEnumerable<HarmonyMethod> GetOwnedPatch(PatchTarget target, PatchGroup group)
     {
-        if (!registry.HasTarget(group, target))
+        if (!_registry.HasTarget(target, Id))
             return [];
 
-        return registry.GetPatchMethods(target, Id, HarmonyPatchType.All).ToList();
+        return _registry.GetPatchMethods(target, Id, HarmonyPatchType.All).ToList();
     }
     
-    private IEnumerable<HarmonyMethod> GetOwnedMatchingPatch(PatchTarget target, PatchGroup group, string? category)
+    private IEnumerable<HarmonyMethod> GetOwnedMatchingPatch(PatchTarget target, PatchGroup group, Category category)
         => GetOwnedPatch(target, group)
             .Where(x => IsPatchMatching(x, category));
 
@@ -185,32 +212,40 @@ public class RuntimeRegistryBuilder(string id, IRuntimePatchRegistry registry) :
         => GetOwnedPatch(target, group)
             .Where(x => IsPatchMatching(x, patchAssembly));
 
-    private IEnumerable<HarmonyMethod> GetOwnedMatchingPatch(PatchTarget target, PatchGroup group, Assembly patchAssembly, string? category)
+    private IEnumerable<HarmonyMethod> GetOwnedMatchingPatch(PatchTarget target, PatchGroup group, Assembly patchAssembly, Category category)
         => GetOwnedPatch(target, group)
             .Where(x => IsPatchMatching(x, patchAssembly, category));
 
-    private static bool IsPatchMatching(HarmonyMethod patchMethod, string? category)
-        => patchMethod.category == category;
+    private static bool IsPatchMatching(HarmonyMethod patchMethod, Category category)
+        => patchMethod.category == category.Name;
 
     private static bool IsPatchMatching(HarmonyMethod patchMethod, Assembly patchAssembly)
         => patchMethod.method.Module.Assembly == patchAssembly;
 
-    private static bool IsPatchMatching(HarmonyMethod patchMethod, Assembly patchAssembly, string? category)
+    private static bool IsPatchMatching(HarmonyMethod patchMethod, Assembly patchAssembly, Category category)
         => IsPatchMatching(patchMethod, patchAssembly) && IsPatchMatching(patchMethod, category);
     
     // ---
     
     private readonly ConditionalWeakTable<Assembly, List<Type>> _allHarmonyPatchCache = new();
-    private readonly ConditionalWeakTable<Assembly, Dictionary<string, List<Type>>> _categoryPatchCache = new();
-    private readonly ConditionalWeakTable<Assembly, List<Type>> _uncategorizedPatchCache = new();
+    private readonly ConditionalWeakTable<Assembly, Dictionary<Category, List<Type>>> _categoryPatchCache = new();
+    private readonly IRuntimePatchRegistry _registry;
 
-    private static string? GetCategory(Type type)
+    public RuntimeRegistryBuilder(string id, IRuntimePatchRegistry registry)
+    {
+        _registry = registry;
+        Id = id;
+        
+        _registry.AddInstance(Id);
+    }
+
+    private static Category GetCategory(Type type)
     {
         var harmonyAttributes = HarmonyMethodExtensions.GetFromType(type);
         if (harmonyAttributes.Count == 0) 
-            return null;
+            return Category.Uncategorized;
         var containerAttributes = HarmonyMethod.Merge(harmonyAttributes);
-        return containerAttributes.category;
+        return new Category(containerAttributes.category);
     }
 
     private List<Type> GetAllTypes(Assembly patchAssembly)
@@ -230,30 +265,17 @@ public class RuntimeRegistryBuilder(string id, IRuntimePatchRegistry registry) :
         return result;
     }
     
-    private List<Type> GetMatchingTypes(Assembly patchAssembly, string? category)
+    private List<Type> GetMatchingTypes(Assembly patchAssembly, Category category)
     {
-        List<Type>? result;
-        
-        if (category == null)
+        if (!_categoryPatchCache.TryGetValue(patchAssembly, out var d))
         {
-            if (!_uncategorizedPatchCache.TryGetValue(patchAssembly, out result))
-            {
-                result = [];
-                _uncategorizedPatchCache.Add(patchAssembly, result);
-            }
+            d = [];
+            _categoryPatchCache.Add(patchAssembly, d);
         }
-        else
+        if (!d.TryGetValue(category, out var result))
         {
-            if (!_categoryPatchCache.TryGetValue(patchAssembly, out var d))
-            {
-                d = [];
-                _categoryPatchCache.Add(patchAssembly, d);
-            }
-            if (!d.TryGetValue(category, out result))
-            {
-                result = [];
-                d.Add(category, result);
-            }
+            result = [];
+            d.Add(category, result);
         }
         
         var allTypes = GetAllTypes(patchAssembly);

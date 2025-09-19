@@ -8,7 +8,7 @@ namespace PreludeLib.Runtime.Backend;
 
 internal static class RuntimeBackendUtils
 {
-    public static IEnumerable<MethodBase> GetTargetOriginals(PatchTarget target, AuxiliaryMethodCallContext context)
+    public static IEnumerable<MethodBase> GetTargetOriginals(PatchTarget target, RuntimeAuxiliaryMethodContext context)
     {
         if (target.OriginalMethod != null)
         {
@@ -32,7 +32,7 @@ internal static class RuntimeBackendUtils
     }
     
     [SuppressMessage("Style", "IDE0300")]
-    private static T RunMethod<T>(MethodInfo callback, AuxiliaryMethodCallContext context, T defaultIfNotExisting, T defaultIfFailing, Func<T, string?>? failOnResult = null, params object[] parameters)
+    private static T RunMethod<T>(MethodInfo callback, RuntimeAuxiliaryMethodContext context, T defaultIfNotExisting, T defaultIfFailing, Func<T, string?>? failOnResult = null, params object[]? parameters)
     {
         var input = (parameters ?? []).Union([context.HarmonyInstance]).ToArray();
         var actualParameters = AccessTools.ActualParameters(callback, input);
@@ -65,7 +65,7 @@ internal static class RuntimeBackendUtils
         return result;
     }
     
-    private static void ReportException(Exception? exception, AuxiliaryMethodCallContext context)
+    private static void ReportException(Exception? exception, RuntimeAuxiliaryMethodContext context)
     {
         if (exception is null)
             return;

@@ -1,6 +1,7 @@
 ﻿using HarmonyLib;
 using Mono.Cecil;
 using PreludeLib.CompileTime.Public;
+using PreludeLib.CompileTime.Registry;
 
 namespace PreludeLib.CompileTime.Internal;
 
@@ -13,15 +14,15 @@ internal interface ICompileTimeRegistryBuilder
     void ScanAndPatch(TypeDefinition containerTypeDef);
     
     void Patch(
-        MethodDefinition originalDef,
+        CompileTimePatchTarget target,
         CompileTimePreludeMethod? prefix = null,
         CompileTimePreludeMethod? postfix = null,
         CompileTimePreludeMethod? finalizer = null,
         CompileTimePreludeMethod? transpiler = null
     );
-    void Patch(MethodReference originalDef, CompileTimePreludePatch patch);
-    void Patch(MethodReference originalDef, HarmonyPatchType patchType, CompileTimePreludeMethod patchMethod);
-    void PatchPrefix(MethodReference originalDef, CompileTimePreludeMethod prefix);
-    void PatchPostfix(MethodReference originalDef, CompileTimePreludeMethod prefix);
-    void PatchFinalizer(MethodReference originalDef, CompileTimePreludeMethod prefix);
+    void Patch(CompileTimePatchTarget target, CompileTimeAttributePatch patch);
+    void Patch(CompileTimePatchTarget target, HarmonyPatchType patchType, CompileTimePreludeMethod patchMethod);
+    void PatchPrefix(CompileTimePatchTarget target, CompileTimePreludeMethod prefix);
+    void PatchPostfix(CompileTimePatchTarget target, CompileTimePreludeMethod postfix);
+    void PatchFinalizer(CompileTimePatchTarget target, CompileTimePreludeMethod finalizer);
 }

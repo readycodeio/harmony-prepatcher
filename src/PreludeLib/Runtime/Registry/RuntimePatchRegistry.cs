@@ -6,6 +6,19 @@ namespace PreludeLib.Runtime.Registry;
 
 public class RuntimePatchRegistry : IRuntimePatchRegistry
 {
+    private struct IdEntry(string id)
+    {
+        public readonly string id = id;
+        
+        public readonly List<PatchGroup> Groups = [];
+        public readonly List<PatchTarget> Targets = [];
+        public readonly List<PatchTarget> AddedTargets = [];
+        
+        public readonly Dictionary<PatchGroup, GroupEntry> GroupEntries = [];
+        public readonly Dictionary<PatchTarget, TargetEntry> TargetEntries = [];
+        public readonly Dictionary<MethodInfo, PatchMethodEntry> PatchMethodEntries = [];
+    }
+    
     private struct GroupEntry(PatchGroup group)
     {
         public readonly PatchGroup Group = group;
@@ -50,58 +63,70 @@ public class RuntimePatchRegistry : IRuntimePatchRegistry
         public MethodInfo? CleanupCallback;
     }
 
-    private readonly List<PatchGroup> _allGroups = [];
     private readonly List<string> _ids = [];
-    private readonly List<string> _addedIds = [];
-    private readonly Dictionary<PatchGroup, GroupEntry> _groupEntries = [];
-    private readonly Dictionary<PatchTarget, TargetEntry> _targetEntries = [];
-    private readonly Dictionary<MethodInfo, PatchMethodEntry> _patchMethodEntries = [];
-
-    public IEnumerable<PatchGroup> GetGroups()
-        => _allGroups;
-
-    public bool HasGroup(PatchGroup group)
-        => _groupEntries.ContainsKey(group);
-
-    public IEnumerable<PatchTarget> GetTargets(PatchGroup group)
-    {
-        EnsureGroupEntry(group, out var entry);
-        return entry.Targets;
-    }
-
-    public IEnumerable<PatchTarget> GetAddedTargets(PatchGroup group)
-    {
-        EnsureGroupEntry(group, out var entry);
-        return entry.AddedTargets;
-    }
-
-    public bool HasTarget(PatchGroup group, PatchTarget target)
-    {
-        EnsureGroupEntry(group, out var entry);
-        return entry.Targets.Contains(target);
-    }
-
-    public bool HasAddedTarget(PatchGroup group, PatchTarget target)
-    {
-        EnsureGroupEntry(group, out var entry);
-        return entry.AddedTargets.Contains(target);
-    }
+    private readonly Dictionary<string, IdEntry> _idEntries = [];
 
     public IEnumerable<string> GetIds()
         => _ids;
 
-    public IEnumerable<string> GetAddedIds()
-        => _addedIds;
-
     public bool HasId(string id)
         => _ids.Contains(id);
 
-    public bool HasAddedId(string id)
-        => _addedIds.Contains(id);
-
-    public IEnumerable<HarmonyMethod> GetPatchMethods(PatchTarget target, string? id, HarmonyPatchType patchType)
+    public IEnumerable<PatchGroup> GetGroups(string id)
     {
-        EnsureTargetEntry(target, out var entry);
+        EnsureIdEntry(id, out var entry);
+        return entry.Groups;
+    }
+
+    public bool HasGroup(PatchGroup group, string id)
+    {
+        EnsureIdEntry(id, out var entry);
+        return entry.GroupEntries.ContainsKey(group);
+    }
+
+    public IEnumerable<PatchTarget> GetTargets(string id)
+    {
+        EnsureIdEntry(id, out var entry);
+        return entry.Targets;
+    }
+
+    public IEnumerable<PatchTarget> GetTargets(PatchGroup group, string id)
+    {
+        EnsureIdEntry(id, out var idEntry);
+        EnsureGroupEntry(idEntry, group, out var entry);
+        return entry.Targets;
+    }
+
+    public IEnumerable<PatchTarget> GetAddedTargets(string id)
+    {
+        EnsureIdEntry(id, out var entry);
+        return entry.AddedTargets;
+    }
+
+    public IEnumerable<PatchTarget> GetAddedTargets(PatchGroup group, string id)
+    {
+        EnsureIdEntry(id, out var idEntry);
+        EnsureGroupEntry(idEntry, group, out var entry);
+        return entry.AddedTargets;
+    }
+    
+    public bool HasTarget(PatchTarget target, string id)
+    {
+        EnsureIdEntry(id, out var entry);
+        return entry.TargetEntries.ContainsKey(target);
+    }
+
+    public bool HasAddedTarget(PatchTarget target, string id)
+    {
+        EnsureIdEntry(id, out var entry);
+        return entry.AddedTargets.Contains(target);
+    }
+
+    public IEnumerable<HarmonyMethod> GetPatchMethods(PatchTarget target, string id, HarmonyPatchType patchType)
+    {
+        EnsureIdEntry(id, out var idEntry);
+        EnsureTargetEntry(idEntry, target, out var entry);
+        
         var entries = patchType switch
         {
             HarmonyPatchType.All => entry.Prefixes
@@ -113,48 +138,47 @@ public class RuntimePatchRegistry : IRuntimePatchRegistry
             _ => [],
         };
         
-        if (id != null)
-            entries = entries.Where(x => x.Id == id);
-
         return entries.Select(p => p.PatchInfo);
     }
 
-    public IEnumerable<HarmonyMethod> GetPrefixMethods(PatchTarget target, string? id)
+    public IEnumerable<HarmonyMethod> GetPrefixMethods(PatchTarget target, string id)
         => GetPatchMethods(target, id, HarmonyPatchType.Prefix);
 
-    public IEnumerable<HarmonyMethod> GetPostfixMethods(PatchTarget target, string? id)
+    public IEnumerable<HarmonyMethod> GetPostfixMethods(PatchTarget target, string id)
         => GetPatchMethods(target, id, HarmonyPatchType.Postfix);
 
-    public IEnumerable<HarmonyMethod> GetFinalizerMethods(PatchTarget target, string? id)
+    public IEnumerable<HarmonyMethod> GetFinalizerMethods(PatchTarget target, string id)
         => GetPatchMethods(target, id, HarmonyPatchType.Finalizer);
 
-    public IEnumerable<HarmonyMethod> GetCategoryPatchMethods(PatchTarget target, string? id, HarmonyPatchType patchType, Category category)
+    public IEnumerable<HarmonyMethod> GetCategoryPatchMethods(PatchTarget target, string id, HarmonyPatchType patchType, Category category)
         => GetPatchMethods(target, id, patchType).Where(x => x.category == category.Name);
 
-    public IEnumerable<HarmonyMethod> GetCategoryPrefixMethods(PatchTarget target, string? id, Category category)
+    public IEnumerable<HarmonyMethod> GetCategoryPrefixMethods(PatchTarget target, string id, Category category)
         => GetPrefixMethods(target, id).Where(x => x.category == category.Name);
 
-    public IEnumerable<HarmonyMethod> GetCategoryPostfixMethods(PatchTarget target, string? id, Category category)
+    public IEnumerable<HarmonyMethod> GetCategoryPostfixMethods(PatchTarget target, string id, Category category)
         => GetPostfixMethods(target, id).Where(x => x.category == category.Name);
 
-    public IEnumerable<HarmonyMethod> GetCategoryFinalizerMethods(PatchTarget target, string? id, Category category)
+    public IEnumerable<HarmonyMethod> GetCategoryFinalizerMethods(PatchTarget target, string id, Category category)
         => GetFinalizerMethods(target, id).Where(x => x.category == category.Name);
 
-    public IEnumerable<HarmonyMethod> GetUncategorizedPatchMethods(PatchTarget target, string? id, HarmonyPatchType patchType)
+    public IEnumerable<HarmonyMethod> GetUncategorizedPatchMethods(PatchTarget target, string id, HarmonyPatchType patchType)
         => GetCategoryPatchMethods(target, id, patchType, Category.Uncategorized);
 
-    public IEnumerable<HarmonyMethod> GetUncategorizedPrefixMethods(PatchTarget target, string? id)
+    public IEnumerable<HarmonyMethod> GetUncategorizedPrefixMethods(PatchTarget target, string id)
         => GetCategoryPrefixMethods(target, id, Category.Uncategorized);
 
-    public IEnumerable<HarmonyMethod> GetUncategorizedPostfixMethods(PatchTarget target, string? id)
+    public IEnumerable<HarmonyMethod> GetUncategorizedPostfixMethods(PatchTarget target, string id)
         => GetCategoryPostfixMethods(target, id, Category.Uncategorized);
 
-    public IEnumerable<HarmonyMethod> GetUncategorizedFinalizerMethods(PatchTarget target, string? id)
+    public IEnumerable<HarmonyMethod> GetUncategorizedFinalizerMethods(PatchTarget target, string id)
         => GetCategoryFinalizerMethods(target, id, Category.Uncategorized);
 
-    public IEnumerable<HarmonyMethod> GetAddedPatchMethods(PatchTarget target, string? id, HarmonyPatchType patchType)
+    public IEnumerable<HarmonyMethod> GetAddedPatchMethods(PatchTarget target, string id, HarmonyPatchType patchType)
     {
-        EnsureTargetEntry(target, out var entry);
+        EnsureIdEntry(id, out var idEntry);
+        EnsureTargetEntry(idEntry, target, out var entry);
+
         var entries = patchType switch
         {
             HarmonyPatchType.All => entry.AddedPrefixes
@@ -165,42 +189,41 @@ public class RuntimePatchRegistry : IRuntimePatchRegistry
             HarmonyPatchType.Finalizer => entry.AddedFinalizers,
             _ => [],
         };
-        
-        if (id != null)
-            entries = entries.Where(x => x.Id == id);
 
         return entries.Select(p => p.PatchInfo);
     }
 
-    public IEnumerable<HarmonyMethod> GetAddedPrefixMethods(PatchTarget target, string? id)
+    public IEnumerable<HarmonyMethod> GetAddedPrefixMethods(PatchTarget target, string id)
         => GetAddedPatchMethods(target, id, HarmonyPatchType.Prefix);
 
-    public IEnumerable<HarmonyMethod> GetAddedPostfixMethods(PatchTarget target, string? id)
+    public IEnumerable<HarmonyMethod> GetAddedPostfixMethods(PatchTarget target, string id)
         => GetAddedPatchMethods(target, id, HarmonyPatchType.Postfix);
 
-    public IEnumerable<HarmonyMethod> GetAddedFinalizerMethods(PatchTarget target, string? id)
+    public IEnumerable<HarmonyMethod> GetAddedFinalizerMethods(PatchTarget target, string id)
         => GetAddedPatchMethods(target, id, HarmonyPatchType.Finalizer);
 
-    public bool HasAddedPatchMethod(PatchTarget target, string? id, HarmonyPatchType patchType)
+    public bool HasAddedPatchMethod(PatchTarget target, string id, HarmonyPatchType patchType)
     {
-        Func<PatchEntry, bool> predicate = id == null ? _ => true : x => x.Id == id;
-
-        EnsureTargetEntry(target, out var entry);
+        EnsureIdEntry(id, out var idEntry);
+        EnsureTargetEntry(idEntry, target, out var entry);
+        
         return patchType switch
         {
-            HarmonyPatchType.All => entry.AddedPrefixes.Any(predicate) ||
-                                    entry.AddedPostfixes.Any(predicate) ||
-                                    entry.AddedFinalizers.Any(predicate),
-            HarmonyPatchType.Prefix => entry.AddedPrefixes.Any(predicate),
-            HarmonyPatchType.Postfix => entry.AddedPostfixes.Any(predicate),
-            HarmonyPatchType.Finalizer => entry.AddedFinalizers.Any(predicate),
+            HarmonyPatchType.All => entry.AddedPrefixes.Count > 0 ||
+                                    entry.AddedPostfixes.Count > 0 ||
+                                    entry.AddedFinalizers.Count > 0,
+            HarmonyPatchType.Prefix => entry.AddedPrefixes.Count > 0,
+            HarmonyPatchType.Postfix => entry.AddedPostfixes.Count > 0,
+            HarmonyPatchType.Finalizer => entry.AddedFinalizers.Count > 0,
             _ => false,
         };
     }
 
-    public IEnumerable<HarmonyMethod> GetRemovedPatchMethods(PatchTarget target, string? id, HarmonyPatchType patchType)
+    public IEnumerable<HarmonyMethod> GetRemovedPatchMethods(PatchTarget target, string id, HarmonyPatchType patchType)
     {
-        EnsureTargetEntry(target, out var entry);
+        EnsureIdEntry(id, out var idEntry);
+        EnsureTargetEntry(idEntry, target, out var entry);
+        
         var entries = patchType switch
         {
             HarmonyPatchType.All => entry.RemovedPrefixes
@@ -212,88 +235,107 @@ public class RuntimePatchRegistry : IRuntimePatchRegistry
             _ => [],
         };
         
-        if (id != null)
-            entries = entries.Where(x => x.Id == id);
-
         return entries.Select(p => p.PatchInfo);
     }
 
-    public IEnumerable<HarmonyMethod> GetRemovedPrefixMethods(PatchTarget target, string? id)
+    public IEnumerable<HarmonyMethod> GetRemovedPrefixMethods(PatchTarget target, string id)
         => GetRemovedPatchMethods(target, id, HarmonyPatchType.Prefix);
 
-    public IEnumerable<HarmonyMethod> GetRemovedPostfixMethods(PatchTarget target, string? id)
+    public IEnumerable<HarmonyMethod> GetRemovedPostfixMethods(PatchTarget target, string id)
         => GetRemovedPatchMethods(target, id, HarmonyPatchType.Postfix);
 
-    public IEnumerable<HarmonyMethod> GetRemovedFinalizerMethods(PatchTarget target, string? id)
+    public IEnumerable<HarmonyMethod> GetRemovedFinalizerMethods(PatchTarget target, string id)
         => GetRemovedPatchMethods(target, id, HarmonyPatchType.Finalizer);
 
-    public bool HasRemovedPatchMethod(PatchTarget target, string? id, HarmonyPatchType patchType)
+    public bool HasRemovedPatchMethod(PatchTarget target, string id, HarmonyPatchType patchType)
     {
-        Func<PatchEntry, bool> predicate = id == null ? _ => true : x => x.Id == id;
-
-        EnsureTargetEntry(target, out var entry);
+        EnsureIdEntry(id, out var idEntry);
+        EnsureTargetEntry(idEntry, target, out var entry);
+        
         return patchType switch
         {
-            HarmonyPatchType.All => entry.RemovedPrefixes.Any(predicate) ||
-                                    entry.RemovedPostfixes.Any(predicate) ||
-                                    entry.RemovedFinalizers.Any(predicate),
-            HarmonyPatchType.Prefix => entry.RemovedPrefixes.Any(predicate),
-            HarmonyPatchType.Postfix => entry.RemovedPostfixes.Any(predicate),
-            HarmonyPatchType.Finalizer => entry.RemovedFinalizers.Any(predicate),
+            HarmonyPatchType.All => entry.RemovedPrefixes.Count != 0 ||
+                                    entry.RemovedPostfixes.Count != 0 ||
+                                    entry.RemovedFinalizers.Count != 0,
+            HarmonyPatchType.Prefix => entry.RemovedPrefixes.Count != 0,
+            HarmonyPatchType.Postfix => entry.RemovedPostfixes.Count != 0,
+            HarmonyPatchType.Finalizer => entry.RemovedFinalizers.Count != 0,
             _ => false,
         };
     }
 
-    public MethodInfo? GetPrepareGroupCallback(PatchGroup group)
+    public MethodInfo? GetPrepareGroupCallback(PatchGroup group, string id)
     {
-        EnsureGroupEntry(group, out var entry);
+        EnsureIdEntry(id, out var idEntry);
+        EnsureGroupEntry(idEntry, group, out var entry);
         return entry.PrepareCallback;
     }
 
-    public MethodInfo? GetCleanupGroupCallback(PatchGroup group)
+    public MethodInfo? GetCleanupGroupCallback(PatchGroup group, string id)
     {
-        EnsureGroupEntry(group, out var entry);
+        EnsureIdEntry(id, out var idEntry);
+        EnsureGroupEntry(idEntry, group, out var entry);
         return entry.CleanupCallback;
     }
 
-    public MethodInfo? GetPreparePatchMethodCallback(HarmonyMethod patchMethod)
+    public MethodInfo? GetPreparePatchMethodCallback(HarmonyMethod patchMethod, string id)
     {
-        EnsurePatchMethodEntry(patchMethod.method, out var entry);
+        EnsureIdEntry(id, out var idEntry);
+        EnsurePatchMethodEntry(idEntry, patchMethod.method, out var entry);
         return entry.PrepareCallback;
     }
 
-    public MethodInfo? GetCleanupPatchMethodCallback(HarmonyMethod patchMethod)
+    public MethodInfo? GetCleanupPatchMethodCallback(HarmonyMethod patchMethod, string id)
     {
-        EnsurePatchMethodEntry(patchMethod.method, out var entry);
+        EnsureIdEntry(id, out var idEntry);
+        EnsurePatchMethodEntry(idEntry, patchMethod.method, out var entry);
         return entry.CleanupCallback;
     }
 
-    public void AddGroup(PatchGroup group)
+    public void AddInstance(string id)
     {
-        if (_groupEntries.ContainsKey(group))
+        if (_idEntries.ContainsKey(id))
             return;
-        _allGroups.Add(group);
+        
+        _ids.Add(id);
+        var entry = new IdEntry(id);
+        _idEntries.Add(id, entry);
+    }
+
+    public void AddGroup(PatchGroup group, string id)
+    {
+        EnsureIdEntry(id, out var idEntry);
+        if (idEntry.GroupEntries.ContainsKey(group))
+            return;
+        idEntry.Groups.Add(group);
         var entry = new GroupEntry(group);
-        _groupEntries.Add(group, entry);
+        idEntry.GroupEntries.Add(group, entry);
     }
 
-    public void AddTarget(PatchGroup group, PatchTarget target)
+    public void AddTarget(PatchTarget target, string id)
     {
-        EnsureGroupEntry(group, out var groupEntry);
-        if (groupEntry.Targets.Contains(target))
+        EnsureIdEntry(id, out var idEntry);
+        if (idEntry.TargetEntries.ContainsKey(target))
             return;
-        if (_targetEntries.ContainsKey(target))
-            throw new ArgumentException($"Patch target already registered in another group: {target.FullDescription()}");
-        var entry = new TargetEntry(target);
-        groupEntry.Targets.Add(target);
-        groupEntry.AddedTargets.Add(target);
-        _targetEntries.Add(target, entry);
+        if (!idEntry.TargetEntries.ContainsKey(target))
+        {
+            idEntry.Targets.Add(target);
+            idEntry.AddedTargets.Add(target);
+            var entry = new TargetEntry(target);
+            idEntry.TargetEntries.Add(target, entry);
+        }
+        EnsureGroupEntry(idEntry, target.Group, out var groupEntry);
+        if (!groupEntry.Targets.Contains(target))
+        {
+            groupEntry.Targets.Add(target);
+            groupEntry.AddedTargets.Add(target);
+        }
     }
 
     public void AddPatchMethod(PatchTarget target, string id, HarmonyPatchType patchType, HarmonyMethod patchMethod)
     {
-        EnsureTargetEntry(target, out var entry);
-        EnsureId(id);
+        EnsureIdEntry(id, out var idEntry);
+        EnsureTargetEntry(idEntry, target, out var entry);
         
         var patchEntry = new PatchEntry(entry, id, patchType, patchMethod);
         if (patchType == HarmonyPatchType.All || patchType == HarmonyPatchType.Prefix)
@@ -306,65 +348,77 @@ public class RuntimePatchRegistry : IRuntimePatchRegistry
             throw new NotSupportedException("Transpilers are not supported in CompileTimePatchRegistry");
     }
 
-    public void RemovePatchMethod(PatchTarget target, string? id, HarmonyPatchType patchType)
+    public void RemovePatchMethod(PatchTarget target, string id, HarmonyPatchType patchType)
     {
-        Predicate<PatchEntry> predicate = id == null ? _ => true : x => x.Id == id;
-        
-        EnsureTargetEntry(target, out var entry);
-        
+        EnsureIdEntry(id, out var idEntry);
+        EnsureTargetEntry(idEntry, target, out var entry);
+
         if (patchType == HarmonyPatchType.All || patchType == HarmonyPatchType.Prefix)
-            entry.Prefixes.RemoveAll(predicate);
+        {
+            entry.RemovedPrefixes.AddRange(entry.Prefixes);
+            entry.Prefixes.Clear();
+            entry.AddedPrefixes.Clear();
+        }
+
         if (patchType == HarmonyPatchType.All || patchType == HarmonyPatchType.Postfix)
-            entry.Postfixes.RemoveAll(predicate);
+        {
+            entry.RemovedPostfixes.AddRange(entry.Postfixes);
+            entry.Postfixes.Clear();
+            entry.AddedPostfixes.Clear();
+        }
+
         if (patchType == HarmonyPatchType.All || patchType == HarmonyPatchType.Finalizer)
-            entry.Finalizers.RemoveAll(predicate);
+        {
+            entry.RemovedFinalizers.AddRange(entry.Finalizers);
+            entry.Finalizers.Clear();
+            entry.AddedFinalizers.Clear();
+        }
     }
 
-    public void RemovePatchMethod(PatchTarget target, string? id, HarmonyMethod patchMethod)
+    public void RemovePatchMethod(PatchTarget target, string id, HarmonyMethod patchMethod)
     {
-        Func<PatchEntry, bool> predicate = id == null 
-            ? (_ => true)
-            : (x => x.Id == id);
+        EnsureIdEntry(id, out var idEntry);
+        EnsureTargetEntry(idEntry, target, out var entry);
 
-        EnsureTargetEntry(target, out var entry);
-
-        var removed = RemovePatchMethod(entry.Prefixes, entry.AddedPrefixes, entry.RemovedPrefixes, patchMethod, predicate);
-        removed |= RemovePatchMethod(entry.Postfixes, entry.AddedPostfixes, entry.RemovedPostfixes, patchMethod, predicate);
-        removed |= RemovePatchMethod(entry.Finalizers, entry.AddedFinalizers, entry.RemovedFinalizers, patchMethod, predicate);
+        var removed = RemovePatchMethod(entry.Prefixes, entry.AddedPrefixes, entry.RemovedPrefixes, patchMethod);
+        removed |= RemovePatchMethod(entry.Postfixes, entry.AddedPostfixes, entry.RemovedPostfixes, patchMethod);
+        removed |= RemovePatchMethod(entry.Finalizers, entry.AddedFinalizers, entry.RemovedFinalizers, patchMethod);
         
         if (!removed)
             throw new ArgumentException($"Patch method {patchMethod.Description()} not registered for target: {target.FullDescription()}");
     }
 
-    public void RemovePatchMethod(PatchTarget target, string? id, MethodInfo patchMethod)
+    public void RemovePatchMethod(PatchTarget target, string id, MethodInfo patchMethod)
         => RemovePatchMethod(target, id, new HarmonyMethod(patchMethod));
 
-    public void SetPrepareGroupCallback(PatchGroup group, MethodInfo? callback)
+    public void SetPrepareGroupCallback(PatchGroup group, string id, MethodInfo? callback)
     {
-        EnsureGroupEntry(group, out var entry);
+        EnsureIdEntry(id, out var idEntry);
+        EnsureGroupEntry(idEntry, group, out var entry);
         entry.PrepareCallback = callback;
-        _groupEntries[group] = entry;
+        idEntry.GroupEntries[group] = entry;
     }
 
-    public void SetCleanupGroupCallback(PatchGroup group, MethodInfo? callback)
+    public void SetCleanupGroupCallback(PatchGroup group, string id, MethodInfo? callback)
     {
-        EnsureGroupEntry(group, out var entry);
+        EnsureIdEntry(id, out var idEntry);
+        EnsureGroupEntry(idEntry, group, out var entry);
         entry.CleanupCallback = callback;
-        _groupEntries[group] = entry;
+        idEntry.GroupEntries[group] = entry;
     }
 
-    public void SetPreparePatchMethodCallback(HarmonyMethod patchMethod, MethodInfo? callback)
+    public void SetPreparePatchMethodCallback(HarmonyMethod patchMethod, string id, MethodInfo? callback)
     {
-        EnsurePatchMethodEntry(patchMethod.method, out var entry);
-        entry.PrepareCallback = callback;
-        _patchMethodEntries[patchMethod.method] = entry;
+        EnsureIdEntry(id, out var idEntry);
+        EnsurePatchMethodEntry(idEntry, patchMethod.method, out var entry);
+        idEntry.PatchMethodEntries[patchMethod.method] = entry;
     }
 
-    public void SetCleanupPatchMethodCallback(HarmonyMethod patchMethod, MethodInfo? callback)
+    public void SetCleanupPatchMethodCallback(HarmonyMethod patchMethod, string id, MethodInfo? callback)
     {
-        EnsurePatchMethodEntry(patchMethod.method, out var entry);
-        entry.CleanupCallback = callback;
-        _patchMethodEntries[patchMethod.method] = entry;
+        EnsureIdEntry(id, out var idEntry);
+        EnsurePatchMethodEntry(idEntry, patchMethod.method, out var entry);
+        idEntry.PatchMethodEntries[patchMethod.method] = entry;
     }
 
     private void AddPatchMethod(
@@ -387,10 +441,6 @@ public class RuntimePatchRegistry : IRuntimePatchRegistry
         if (found)
             throw new ArgumentException($"Patch method {patchEntry.PatchInfo.Description()} already registered for target: {patchEntry.Owner.Target.FullDescription()}");
 
-        if (!_patchMethodEntries.ContainsKey(patchEntry.PatchInfo.method))
-        {
-            _patchMethodEntries.Add(patchEntry.PatchInfo.method, new PatchMethodEntry(patchEntry.PatchInfo));
-        }
         patches.Add(patchEntry);
         
         var added = false;
@@ -413,15 +463,14 @@ public class RuntimePatchRegistry : IRuntimePatchRegistry
         List<PatchEntry> patches,
         List<PatchEntry> addedPatches,
         List<PatchEntry> removedPatches,
-        HarmonyMethod item, 
-        Func<PatchEntry, bool> predicate)
+        HarmonyMethod item)
     {
         var found = false;
         PatchEntry entry = default;
         for (var i = 0; i < patches.Count; i++)
         {
             var patchItem = patches[i];
-            if (patchItem.PatchInfo.method == item.method && predicate(patchItem))
+            if (patchItem.PatchInfo.method == item.method)
             {
                 found = true;
                 entry = patchItem;
@@ -453,50 +502,54 @@ public class RuntimePatchRegistry : IRuntimePatchRegistry
     
     public void ResetChanges()
     {
-        _addedIds.Clear();
-
-        foreach (var entry in _groupEntries.Values)
+        foreach (var idEntry in _idEntries.Values)
         {
-            entry.AddedTargets.Clear();
-        }
+            idEntry.AddedTargets.Clear();
+         
+            foreach (var entry in idEntry.GroupEntries.Values)
+            {
+                entry.AddedTargets.Clear();
+            }
 
-        foreach (var entry in _targetEntries.Values)
-        {
-            entry.AddedPrefixes.Clear();
-            entry.AddedPostfixes.Clear();
-            entry.AddedFinalizers.Clear();
-            entry.RemovedPrefixes.Clear();
-            entry.RemovedPostfixes.Clear();
-            entry.RemovedFinalizers.Clear();
+            foreach (var entry in idEntry.TargetEntries.Values)
+            {
+                entry.AddedPrefixes.Clear();
+                entry.AddedPostfixes.Clear();
+                entry.AddedFinalizers.Clear();
+                entry.RemovedPrefixes.Clear();
+                entry.RemovedPostfixes.Clear();
+                entry.RemovedFinalizers.Clear();
+            }   
         }
     }
-    
-    private void EnsureGroupEntry(PatchGroup group, out GroupEntry entry)
+
+    private void EnsureIdEntry(string id, out IdEntry entry)
     {
-        if (!_groupEntries.TryGetValue(group, out var e))
+        if (id == null)
+            throw new ArgumentNullException(nameof(id));
+        if (!_idEntries.TryGetValue(id, out var e))
+            throw new ArgumentException($"ID not registered: {id}");
+        entry = e;
+    }
+    
+    private void EnsureGroupEntry(in IdEntry idEntry, PatchGroup group, out GroupEntry entry)
+    {
+        if (!idEntry.GroupEntries.TryGetValue(group, out var e))
             throw new ArgumentException($"Group not registered: {group.FullDescription()}");
         entry = e;
     }
 
-    private void EnsureTargetEntry(PatchTarget target, out TargetEntry entry)
+    private void EnsureTargetEntry(in IdEntry idEntry, PatchTarget target, out TargetEntry entry)
     {
-        if (!_targetEntries.TryGetValue(target, out var e))
+        if (!idEntry.TargetEntries.TryGetValue(target, out var e))
             throw new ArgumentException($"Patch target not registered: {target.FullDescription()}");
         entry = e;
     }
 
-    private void EnsurePatchMethodEntry(MethodInfo patch, out PatchMethodEntry entry)
+    private void EnsurePatchMethodEntry(in IdEntry idEntry, MethodInfo patch, out PatchMethodEntry entry)
     {
-        if (!_patchMethodEntries.TryGetValue(patch, out var e))
+        if (!idEntry.PatchMethodEntries.TryGetValue(patch, out var e))
             throw new ArgumentException($"Container type method not registered: {patch.FullDescription()}");
         entry = e;
-    }
-
-    private void EnsureId(string id)
-    {
-        if (_ids.Contains(id))
-            return;
-        _ids.Add(id);
-        _addedIds.Add(id);
     }
 }

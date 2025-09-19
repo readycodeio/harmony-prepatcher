@@ -46,7 +46,7 @@ internal readonly struct RuntimeContainerTypeRegistryBuilder
 
         private readonly Dictionary<PatchTarget, Job> _state = [];
 
-        internal Job GetJob(PatchGroup group, PatchTarget target)
+        internal Job GetJob(PatchTarget target)
         {
             if (_state.TryGetValue(target, out var job) is false)
             {
@@ -83,7 +83,7 @@ internal readonly struct RuntimeContainerTypeRegistryBuilder
     private readonly HarmonyMethod _containerAttributes;
     private readonly Dictionary<Type, MethodInfo> _auxiliaryMethods;
     private readonly List<AttributePatch> _patchMethods;
-    
+
     internal RuntimeContainerTypeRegistryBuilder(RuntimeRegistryBuilder owner, Type type)
     {
         _owner = owner;
@@ -110,6 +110,9 @@ internal readonly struct RuntimeContainerTypeRegistryBuilder
         }
     }
 
+    private PatchGroup GetPatchGroup()
+        => new(_containerType);
+    
     public void Patch()
     {
         // NOTE: Skipped `HarmonyPrepare` feature
@@ -147,7 +150,7 @@ internal readonly struct RuntimeContainerTypeRegistryBuilder
         for (var i = 0; i < targets.Count; i++)
         {
             lastTarget = targets[i];
-            var job = jobs.GetJob(new PatchGroup(_containerType), lastTarget.Value);
+            var job = jobs.GetJob(lastTarget.Value);
             foreach (var patchMethod in _patchMethods)
             {
                 var note = "You cannot combine TargetMethod, TargetMethods or [HarmonyPatchAll] with individual annotations";
@@ -174,11 +177,11 @@ internal readonly struct RuntimeContainerTypeRegistryBuilder
         var jobs = new PatchJobs();
         foreach (var patchMethod in _patchMethods)
         {
-            lastTarget = PatchTarget.FromOriginal(patchMethod.info.GetOriginalMethod());
+            lastTarget = PatchTarget.FromOriginal(patchMethod.info.GetOriginalMethod(), GetPatchGroup());
             if (lastTarget is null)
                 throw new ArgumentException($"Undefined target method for patch method {patchMethod.info.method.FullDescription()}");
 
-            var job = jobs.GetJob(new PatchGroup(_containerType), lastTarget.Value);
+            var job = jobs.GetJob(lastTarget.Value);
             job.AddPatch(patchMethod);
         }
         foreach (var job in jobs.GetJobs())
@@ -229,11 +232,12 @@ internal readonly struct RuntimeContainerTypeRegistryBuilder
                 throw new ArgumentException($"Using {PatchTools.harmonyPatchAllFullName} requires an additional attribute for specifying the Class/Type");
 
             var list = new List<PatchTarget>();
-            list.AddRange(AccessTools.GetDeclaredConstructors(type).Cast<MethodBase>().Select(PatchTarget.FromOriginal));
-            list.AddRange(AccessTools.GetDeclaredMethods(type).Cast<MethodBase>().Select(PatchTarget.FromOriginal));
+            var group = GetPatchGroup();
+            list.AddRange(AccessTools.GetDeclaredConstructors(type).Cast<MethodBase>().Select(x => PatchTarget.FromOriginal(x, group)));
+            list.AddRange(AccessTools.GetDeclaredMethods(type).Cast<MethodBase>().Select(x => PatchTarget.FromOriginal(x, group)));
             var props = AccessTools.GetDeclaredProperties(type);
-            list.AddRange(props.Select(prop => prop.GetGetMethod(true)).Where(method => method is not null).Cast<MethodBase>().Select(PatchTarget.FromOriginal));
-            list.AddRange(props.Select(prop => prop.GetSetMethod(true)).Where(method => method is not null).Cast<MethodBase>().Select(PatchTarget.FromOriginal));
+            list.AddRange(props.Select(prop => prop.GetGetMethod(true)).Where(method => method is not null).Cast<MethodBase>().Select(x => PatchTarget.FromOriginal(x, group)));
+            list.AddRange(props.Select(prop => prop.GetSetMethod(true)).Where(method => method is not null).Cast<MethodBase>().Select(x => PatchTarget.FromOriginal(x, group)));
             return list;
         }
 
@@ -241,7 +245,7 @@ internal readonly struct RuntimeContainerTypeRegistryBuilder
 
         if (_auxiliaryMethods.TryGetValue(typeof(HarmonyTargetMethods), out var harmonyTargetListMethod))
         {
-            return [PatchTarget.FromTargetMethod(harmonyTargetListMethod)];
+            return [PatchTarget.FromTargetMethod(harmonyTargetListMethod, GetPatchGroup())];
         }
 
         // var targetMethods = RunMethod<HarmonyTargetMethods, IEnumerable<MethodBase>>(null, null);
@@ -267,7 +271,7 @@ internal readonly struct RuntimeContainerTypeRegistryBuilder
 
         if (_auxiliaryMethods.TryGetValue(typeof(HarmonyTargetMethod), out var harmonyTargetMethod))
         {
-            return [PatchTarget.FromTargetMethod(harmonyTargetMethod)];
+            return [PatchTarget.FromTargetMethod(harmonyTargetMethod, GetPatchGroup())];
         }
 
         // var targetMethod = RunMethod<HarmonyTargetMethod, MethodBase>(null, null, method => method is null ? "null" : null);

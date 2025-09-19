@@ -37,27 +37,27 @@ public class CompileTimePrelude : ICompileTimeRegistryBuilder
         => _builder.ScanAndPatch(containerTypeDef);
 
     public void Patch(
-        MethodDefinition originalDef,
+        CompileTimePatchTarget target,
         CompileTimePreludeMethod? prefix = null,
         CompileTimePreludeMethod? postfix = null,
         CompileTimePreludeMethod? finalizer = null,
         CompileTimePreludeMethod? transpiler = null)
-        => _builder.Patch(originalDef, prefix, postfix, finalizer, transpiler);
+        => _builder.Patch(target, prefix, postfix, finalizer, transpiler);
 
-    public void Patch(MethodReference originalDef, CompileTimePreludePatch patch)
-        => _builder.Patch(originalDef, patch);
+    public void Patch(CompileTimePatchTarget target, CompileTimeAttributePatch patch)
+        => _builder.Patch(target, patch);
 
-    public void Patch(MethodReference originalDef, HarmonyPatchType patchType, CompileTimePreludeMethod patchMethod)
-        => _builder.Patch(originalDef, patchType, patchMethod);
+    public void Patch(CompileTimePatchTarget target, HarmonyPatchType patchType, CompileTimePreludeMethod patchMethod)
+        => _builder.Patch(target, patchType, patchMethod);
 
-    public void PatchPrefix(MethodReference originalDef, CompileTimePreludeMethod prefix)
-        => _builder.PatchPrefix(originalDef, prefix);
+    public void PatchPrefix(CompileTimePatchTarget target, CompileTimePreludeMethod prefix)
+        => _builder.PatchPrefix(target, prefix);
 
-    public void PatchPostfix(MethodReference originalDef, CompileTimePreludeMethod prefix)
-        => _builder.PatchPostfix(originalDef, prefix);
+    public void PatchPostfix(CompileTimePatchTarget target, CompileTimePreludeMethod postfix)
+        => _builder.PatchPostfix(target, postfix);
 
-    public void PatchFinalizer(MethodReference originalDef, CompileTimePreludeMethod prefix)
-        => _builder.PatchFinalizer(originalDef, prefix);
+    public void PatchFinalizer(CompileTimePatchTarget target, CompileTimePreludeMethod finalizer)
+        => _builder.PatchFinalizer(target, finalizer);
 
     public void Commit()
     {

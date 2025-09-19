@@ -30,25 +30,6 @@ public class CompileTimePreludeMethod
 		// empty
 	}
 	
-	public CompileTimePreludeMethod(ModuleDefinition moduleDef, HarmonyMethod harmonyMethod)
-	{
-		StaticFieldInstance = null;
-		if (harmonyMethod.method != null)
-			Method = moduleDef.ImportReference(harmonyMethod.method);
-		Category = harmonyMethod.category;
-		if (harmonyMethod.declaringType != null)
-			DeclaringType = moduleDef.ImportReference(harmonyMethod.declaringType);
-		MethodName = harmonyMethod.methodName;
-		MethodType = harmonyMethod.methodType;
-		ArgumentTypes = harmonyMethod.argumentTypes?.Select(moduleDef.ImportReference).ToArray();
-		Priority = harmonyMethod.priority;
-		Before = harmonyMethod.before ?? [];
-		After = harmonyMethod.after ?? [];
-		ReversePatchType = harmonyMethod.reversePatchType;
-		Debug = harmonyMethod.debug;
-		NonVirtualDelegate = harmonyMethod.nonVirtualDelegate;
-	}
-	
 	public CompileTimePreludeMethod(CompileTimePreludeMethod patchMethod)
 	{
 		StaticFieldInstance = patchMethod.StaticFieldInstance;

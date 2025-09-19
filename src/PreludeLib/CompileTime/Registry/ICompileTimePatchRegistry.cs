@@ -1,5 +1,4 @@
 ﻿using HarmonyLib;
-using Mono.Cecil;
 using PreludeLib.Common;
 using PreludeLib.CompileTime.Public;
 
@@ -7,38 +6,44 @@ namespace PreludeLib.CompileTime.Registry;
 
 public interface ICompileTimePatchRegistry
 {
-    IEnumerable<MethodDefinition> GetOriginalMethods();
-    IEnumerable<MethodDefinition> GetAddedOriginalMethods();
-    bool HasOriginalMethod(MethodDefinition originalDef);
-    bool HasAddedOriginalMethod(MethodDefinition originalDef);
+    IEnumerable<CompileTimePatchGroup> GetGroups();
+    bool HasGroup(CompileTimePatchGroup group);
+ 
+    IEnumerable<CompileTimePatchTarget> GetTargets();
+    IEnumerable<CompileTimePatchTarget> GetAddedTargets();
+    bool HasTarget(CompileTimePatchTarget target);
+    bool HasAddedTarget(CompileTimePatchTarget target);
     
-    IEnumerable<CompileTimePreludeMethod> GetPatchMethods(MethodDefinition originalDef, HarmonyPatchType patchType);
-    IEnumerable<CompileTimePreludeMethod> GetPrefixMethods(MethodDefinition originalDef);
-    IEnumerable<CompileTimePreludeMethod> GetPostfixMethods(MethodDefinition originalDef);
-    IEnumerable<CompileTimePreludeMethod> GetFinalizerMethods(MethodDefinition originalDef);
+    IEnumerable<CompileTimePatchTarget> GetTargets(CompileTimePatchGroup group);
+    IEnumerable<CompileTimePatchTarget> GetAddedTargets(CompileTimePatchGroup group);
+    bool HasTarget(CompileTimePatchGroup group, CompileTimePatchTarget target);
+    bool HasAddedTarget(CompileTimePatchGroup group, CompileTimePatchTarget target);
     
-    IEnumerable<CompileTimePreludeMethod> GetCategoryPatchMethods(MethodDefinition originalDef, HarmonyPatchType patchType, Category category);
-    IEnumerable<CompileTimePreludeMethod> GetCategoryPrefixMethods(MethodDefinition originalDef, Category category);
-    IEnumerable<CompileTimePreludeMethod> GetCategoryPostfixMethods(MethodDefinition originalDef, Category category);
-    IEnumerable<CompileTimePreludeMethod> GetCategoryFinalizerMethods(MethodDefinition originalDef, Category category);
+    IEnumerable<CompileTimePreludeMethod> GetPatchMethods(CompileTimePatchTarget target, HarmonyPatchType patchType);
+    IEnumerable<CompileTimePreludeMethod> GetPrefixMethods(CompileTimePatchTarget target);
+    IEnumerable<CompileTimePreludeMethod> GetPostfixMethods(CompileTimePatchTarget target);
+    IEnumerable<CompileTimePreludeMethod> GetFinalizerMethods(CompileTimePatchTarget target);
     
-    IEnumerable<CompileTimePreludeMethod> GetUncategorizedPatchMethods(MethodDefinition originalDef, HarmonyPatchType patchType);
-    IEnumerable<CompileTimePreludeMethod> GetUncategorizedPrefixMethods(MethodDefinition originalDef);
-    IEnumerable<CompileTimePreludeMethod> GetUncategorizedPostfixMethods(MethodDefinition originalDef);
-    IEnumerable<CompileTimePreludeMethod> GetUncategorizedFinalizerMethods(MethodDefinition originalDef);
+    IEnumerable<CompileTimePreludeMethod> GetCategoryPatchMethods(CompileTimePatchTarget target, HarmonyPatchType patchType, Category category);
+    IEnumerable<CompileTimePreludeMethod> GetCategoryPrefixMethods(CompileTimePatchTarget target, Category category);
+    IEnumerable<CompileTimePreludeMethod> GetCategoryPostfixMethods(CompileTimePatchTarget target, Category category);
+    IEnumerable<CompileTimePreludeMethod> GetCategoryFinalizerMethods(CompileTimePatchTarget target, Category category);
     
-    IEnumerable<CompileTimePreludeMethod> GetAddedPatchMethods(MethodDefinition originalDef, HarmonyPatchType patchType);
-    IEnumerable<CompileTimePreludeMethod> GetAddedPrefixMethods(MethodDefinition originalDef);
-    IEnumerable<CompileTimePreludeMethod> GetAddedPostfixMethods(MethodDefinition originalDef);
-    IEnumerable<CompileTimePreludeMethod> GetAddedFinalizerMethods(MethodDefinition originalDef);
-    bool HasAddedPatchMethod(MethodDefinition originalDef , HarmonyPatchType patchType);
+    IEnumerable<CompileTimePreludeMethod> GetUncategorizedPatchMethods(CompileTimePatchTarget target, HarmonyPatchType patchType);
+    IEnumerable<CompileTimePreludeMethod> GetUncategorizedPrefixMethods(CompileTimePatchTarget target);
+    IEnumerable<CompileTimePreludeMethod> GetUncategorizedPostfixMethods(CompileTimePatchTarget target);
+    IEnumerable<CompileTimePreludeMethod> GetUncategorizedFinalizerMethods(CompileTimePatchTarget target);
     
-    void AddOriginalMethod(MethodReference originalRef);
-    void AddOriginalMethod(MethodDefinition originalDef);
-    void AddPatchMethod(MethodReference originalRef, HarmonyPatchType patchType, CompileTimePreludeMethod patchMethod);
-    void AddPatchMethod(MethodDefinition originalDef, HarmonyPatchType patchType, CompileTimePreludeMethod patchMethod);
-    void AddPatchMethod(MethodReference originalRef, CompileTimePreludePatch patchInfo);
-    void AddPatchMethod(MethodDefinition originalDef, CompileTimePreludePatch patchInfo);
+    IEnumerable<CompileTimePreludeMethod> GetAddedPatchMethods(CompileTimePatchTarget target, HarmonyPatchType patchType);
+    IEnumerable<CompileTimePreludeMethod> GetAddedPrefixMethods(CompileTimePatchTarget target);
+    IEnumerable<CompileTimePreludeMethod> GetAddedPostfixMethods(CompileTimePatchTarget target);
+    IEnumerable<CompileTimePreludeMethod> GetAddedFinalizerMethods(CompileTimePatchTarget target);
+    bool HasAddedPatchMethod(CompileTimePatchTarget target, HarmonyPatchType patchType);
+
+    void AddGroup(CompileTimePatchGroup group);
+    void AddTarget(CompileTimePatchTarget target);
+    void AddPatchMethod(CompileTimePatchTarget target, HarmonyPatchType patchType, CompileTimePreludeMethod patchMethod);
+    void AddPatchMethod(CompileTimePatchTarget target, CompileTimeAttributePatch patchInfo);
 
     public void ResetChanges();
 }

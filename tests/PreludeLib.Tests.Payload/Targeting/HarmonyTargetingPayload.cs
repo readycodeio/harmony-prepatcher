@@ -8,4 +8,4 @@ public class HarmonyTargetingPayload(ILogger logger) : TargetingPayloadBase(true
 {
     protected override IRuntimeBackend CreateBackend()
         => new RuntimeHarmonyBackend(Logger);
-}
+} 

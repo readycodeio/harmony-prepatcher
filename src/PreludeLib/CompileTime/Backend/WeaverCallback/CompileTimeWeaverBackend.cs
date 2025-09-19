@@ -6,7 +6,6 @@ using Mono.Cecil.Cil;
 using Mono.Cecil.Rocks;
 using MonoMod.Utils;
 using PreludeLib.CompileTime.Public;
-using PreludeLib.CompileTime.Registry;
 using PreludeLib.CompileTime.Utils;
 using static PreludeLib.CompileTime.Utils.CompileTimePreludeCecilUtils;
 using EventAttributes = Mono.Cecil.EventAttributes;
@@ -19,7 +18,7 @@ using TypeAttributes = Mono.Cecil.TypeAttributes;
 
 namespace PreludeLib.CompileTime.Backend.WeaverCallback;
 
-public class CompileTimeWeaverBackend(ILogger logger) : ICompileTimeBackend
+public class CompileTimeWeaverBackend(ILogger logger) : CompileTimeBackendBase(logger)
 {
 	internal const string PARAM_INDEX_PREFIX = "__";
 	const string INSTANCE_FIELD_PREFIX = "___";
@@ -41,32 +40,6 @@ public class CompileTimeWeaverBackend(ILogger logger) : ICompileTimeBackend
 		{ OpCodes.Br_S, OpCodes.Br },
 		{ OpCodes.Blt_Un_S, OpCodes.Blt_Un }
 	};
-	
-    private readonly TypeReferenceComparer _typeRefComparer = new();
-    
-    private void DoPatch(
-        MethodDefinition originalDef,
-        IEnumerable<CompileTimePreludeMethod> prefixes,
-        IEnumerable<CompileTimePreludeMethod> postfixes,
-        IEnumerable<CompileTimePreludeMethod> finalizers)
-    {
-        var eventPrefixes = GenerateEventPatches(originalDef, prefixes);
-        var eventPostfixes = GenerateEventPatches(originalDef, postfixes);
-        var eventFinalizers = GenerateEventPatches(originalDef, finalizers);
-
-        PatchMethod(originalDef, eventPrefixes, eventPostfixes, eventFinalizers);
-    }
-    
-    private IEnumerable<CompileTimePreludeMethod> GenerateEventPatches(MethodDefinition originalDef, IEnumerable<CompileTimePreludeMethod> patchMethods)
-	{
-		var result = new List<CompileTimePreludeMethod>();
-		foreach (var fix in patchMethods)
-		{
-			var newFix = GenerateEventPatch(originalDef, fix.Method!.Resolve(), fix);
-			result.Add(newFix);
-		}
-		return result;
-	}
 
 	private struct PatchEntry
 	{
@@ -75,8 +48,10 @@ public class CompileTimeWeaverBackend(ILogger logger) : ICompileTimeBackend
 		public TypeDefinition DelegateTypeDef;
 		public MethodDefinition Method;
 	}
-    
+
+	private readonly TypeReferenceComparer _typeRefComparer = new();
 	private readonly Dictionary<MethodDefinition, PatchEntry> _patchEntries = [];
+	private MethodBodyRestoreHelper _restoreHelper = new();
 	
 	private CompileTimePreludeMethod GenerateEventPatch(MethodDefinition originalDef, MethodDefinition patchDef, CompileTimePreludeMethod patchMethod)
 	{
@@ -205,27 +180,6 @@ public class CompileTimeWeaverBackend(ILogger logger) : ICompileTimeBackend
 		return result;
 	}
 
-    // FIXME: Actually sort
-    public static IEnumerable<CompileTimePreludeMethod> GetSortedPatchMethods(MethodDefinition originalDef, IEnumerable<CompileTimePreludeMethod> patchMethods)
-	    => patchMethods;
-    
-    private void PatchMethod(MethodDefinition originalDef, 
-	    IEnumerable<CompileTimePreludeMethod> prefixes,
-	    IEnumerable<CompileTimePreludeMethod> postfixes,
-	    IEnumerable<CompileTimePreludeMethod> finalizers)
-    {
-        var sortedPrefixes = GetSortedPatchMethods(originalDef, prefixes);
-        var sortedPostfixes = GetSortedPatchMethods(originalDef, postfixes);
-        var sortedFinalizers = GetSortedPatchMethods(originalDef, finalizers);
-
-        PatchMethod(
-            originalDef,
-            sortedPrefixes.ToList(),
-            sortedPostfixes.ToList(),
-            sortedFinalizers.ToList()
-        );
-    }
-
     private struct OriginalMethod(MethodDefinition methodDef)
     {
 	    public readonly MethodDefinition MethodDef = methodDef;
@@ -238,7 +192,38 @@ public class CompileTimeWeaverBackend(ILogger logger) : ICompileTimeBackend
 	    public VariableDefinition? ResultVariable;
     }
     
-    private void PatchMethod(MethodDefinition originalDef,
+    private IEnumerable<CompileTimePreludeMethod> GenerateEventPatches(MethodDefinition originalDef, IEnumerable<CompileTimePreludeMethod> patchMethods)
+    {
+	    var result = new List<CompileTimePreludeMethod>();
+	    foreach (var fix in patchMethods)
+	    {
+		    var newFix = GenerateEventPatch(originalDef, fix.Method!.Resolve(), fix);
+		    result.Add(newFix);
+	    }
+	    return result;
+    }
+    
+    protected override void DoPatch(
+	    MethodDefinition original, 
+	    List<CompileTimePreludeMethod> prefixes,
+	    List<CompileTimePreludeMethod> postfixes,
+	    List<CompileTimePreludeMethod> finalizers,
+	    List<CompileTimePreludeMethod> addedPrefixes,
+	    List<CompileTimePreludeMethod> addedPostfixes,
+	    List<CompileTimePreludeMethod> addedFinalizers)
+    {
+	    // NOTE: Restore should be first to avoid unnecessary work
+	    _restoreHelper.Restore(original);
+	    _restoreHelper.SaveIfNotSaved(original);
+	    
+	    var eventPrefixes = GenerateEventPatches(original, prefixes).ToList();
+	    var eventPostfixes = GenerateEventPatches(original, postfixes).ToList();
+	    var eventFinalizers = GenerateEventPatches(original, finalizers).ToList();
+	    
+	    DoPatch(original, eventPrefixes, eventPostfixes, eventFinalizers);
+    }
+    
+    protected void DoPatch(MethodDefinition originalDef,
 	    List<CompileTimePreludeMethod> prefixes,
 	    List<CompileTimePreludeMethod> postfixes,
 	    List<CompileTimePreludeMethod> finalizers)
@@ -423,10 +408,10 @@ public class CompileTimeWeaverBackend(ILogger logger) : ICompileTimeBackend
 
 	    EmitCodes(il, flow);
 
-	    logger.LogDebug("Patching: {Original} ==================", originalDef);
+	    Logger.LogDebug("Patching: {Original} ==================", originalDef);
 	    foreach (var instr in body.Instructions)
 	    {
-		    logger.LogDebug(instr.ToString());
+		    Logger.LogDebug(instr.ToString());
 	    }
     }
     
@@ -1354,9 +1339,18 @@ public class CompileTimeWeaverBackend(ILogger logger) : ICompileTimeBackend
 			result.Add(Instruction.Create(OpCodes.Dup));
 			result.Add(Instruction.Create(OpCodes.Brtrue_S, invokeLabel.Instruction));
 			result.Add(Instruction.Create(OpCodes.Pop));
+			var exceptionType = module.ImportReference(typeof(Exception));
 			if (EqualTypeRef(patch.Method!.ReturnType, ts.Boolean))
 			{
 				result.Add(Instruction.Create(OpCodes.Ldc_I4_1));
+			}
+			else if (EqualTypeRef(patch.Method!.ReturnType, exceptionType))
+			{
+				result.Add(Instruction.Create(OpCodes.Ldloc, original.ExceptionVariable!));
+			}
+			else if (!EqualTypeRef(patch.Method!.ReturnType, ts.Void))
+			{
+				throw new Exception($"Static field instance patch {patch} must have a \"bool\", \"Exception\" or \"void\" return type");
 			}
 			result.Add(Instruction.Create(OpCodes.Br_S, skipInvokeLabel.Instruction));
 			result.Add(NopWithLabels(flow, invokeLabel));
@@ -1549,12 +1543,14 @@ public class CompileTimeWeaverBackend(ILogger logger) : ICompileTimeBackend
 				var val = paramRealName.Substring(PARAM_INDEX_PREFIX.Length);
 				if (!int.TryParse(val, out argumentIdx))
 					throw new Exception($"Parameter {paramRealName} does not contain a valid index");
+				if (isInstance)
+					argumentIdx++;
 				if (argumentIdx < 0 || argumentIdx >= originalParameters.Count)
 					throw new Exception($"No parameter found at index {argumentIdx}");
 			}
 			else
 			{
-				argumentIdx = GetArgumentIndex(patch.Method.Resolve(), originalParameterNames, injection.ParameterDef);
+				argumentIdx = GetArgumentIndex(patch.Method!.Resolve(), originalParameterNames, injection.ParameterDef);
 				if (argumentIdx == -1)
 				{
 					var patchMethod = CompileTimePreludeMethod.Merge(CompileTimePreludeMethodUtils.GetFromTypeRef(paramType));
@@ -1594,6 +1590,7 @@ public class CompileTimeWeaverBackend(ILogger logger) : ICompileTimeBackend
 				}
 			}
 
+			var patchArgIndex = argumentIdx + (isInstance && staticFieldThis == null ? 1 : 0);
 			var originalParamType = originalParameters[argumentIdx].ParameterType;
 			var originalParamElementType = originalParamType.IsByReference ? originalParamType.GetElementType() : originalParamType;
 			var patchParamType = paramType;
@@ -1601,7 +1598,6 @@ public class CompileTimeWeaverBackend(ILogger logger) : ICompileTimeBackend
 			var originalIsNormal = originalParameters[argumentIdx].IsOut is false && originalParamType.IsByReference is false;
 			var patchIsNormal = injection.ParameterDef.IsOut is false && patchParamType.IsByReference is false;
 			var needsBoxing = originalParamElementType.IsValueType && patchParamElementType.IsValueType is false;
-			var patchArgIndex = argumentIdx + (isInstance && staticFieldThis == null ? 1 : 0);
 			
 			if (originalIsNormal == patchIsNormal)
 			{
@@ -1888,16 +1884,4 @@ public class CompileTimeWeaverBackend(ILogger logger) : ICompileTimeBackend
 
     bool EqualTypeRef(TypeReference x, TypeReference y)
 	    => _typeRefComparer.Equals(x, y);
-
-    public void Commit(ICompileTimePatchRegistry registry)
-    {
-	    foreach (var originalDef in registry.GetOriginalMethods())
-	    {
-		    var prefixes = registry.GetPrefixMethods(originalDef);
-		    var postfixes = registry.GetPostfixMethods(originalDef);
-		    var finalizers = registry.GetFinalizerMethods(originalDef);
-
-		    DoPatch(originalDef, prefixes, postfixes, finalizers);
-	    }
-    }
 }

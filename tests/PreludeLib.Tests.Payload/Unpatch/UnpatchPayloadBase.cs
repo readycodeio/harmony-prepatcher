@@ -40,7 +40,7 @@ public abstract class UnpatchPayloadBase(bool shouldPass, ILogger logger) : Back
 
             var original = typeof(UnpatchTargets).GetMethod(nameof(UnpatchTargets.Compute))!;
             var bPatchMethod = typeof(UnpatchPrefixB).GetMethod("Prefix", BindingFlags.Public | BindingFlags.Static)!;
-            builder.Unpatch(PatchTarget.FromOriginal(original), bPatchMethod); // <-- corrected overload
+            builder.Unpatch(original, bPatchMethod, new PatchGroup(typeof(UnpatchPrefixB))); // <-- corrected overload
             owner.Commit();
 
             // Run again: expect A -> C with same relative order
@@ -51,7 +51,7 @@ public abstract class UnpatchPayloadBase(bool shouldPass, ILogger logger) : Back
             UnpatchProbes.Steps.Clear();
 
             var aPatchMethod = typeof(UnpatchPrefixA).GetMethod("Prefix", BindingFlags.Public | BindingFlags.Static)!;
-            builder.Unpatch(PatchTarget.FromOriginal(original), aPatchMethod); // <-- corrected overload
+            builder.Unpatch(original, aPatchMethod, new PatchGroup(typeof(UnpatchPrefixA))); // <-- corrected overload
             owner.Commit();
 
             // Run again: expect C with same relative order
@@ -60,7 +60,7 @@ public abstract class UnpatchPayloadBase(bool shouldPass, ILogger logger) : Back
 
             UnpatchProbes.Steps.Clear();
 
-            builder.Patch(PatchTarget.FromOriginal(original), prefix: new HarmonyMethod(bPatchMethod)); // <-- corrected overload
+            builder.Patch(original, prefix: new HarmonyMethod(bPatchMethod), group: new PatchGroup(typeof(UnpatchPrefixB))); // <-- corrected overload
             owner.Commit();
 
             // Run again: expect C with same relative order
@@ -139,7 +139,7 @@ public abstract class UnpatchPayloadBase(bool shouldPass, ILogger logger) : Back
             // Remove ONLY the postfix by its MethodInfo
             UnpatchProbes.Steps.Clear();
             var original = typeof(UnpatchTargets).GetMethod(nameof(UnpatchTargets.Compute))!;
-            builder.Unpatch(PatchTarget.FromOriginal(original), MixedPostfixPatch.MethodInfo()); // <-- corrected overload
+            builder.Unpatch(original, MixedPostfixPatch.MethodInfo(), group: new PatchGroup(typeof(MixedPostfixPatch))); // <-- corrected overload
             owner.Commit();
 
             int r2 = t.Compute(2); // Prefix only: 2->21 ; Finalizer runs; no +100

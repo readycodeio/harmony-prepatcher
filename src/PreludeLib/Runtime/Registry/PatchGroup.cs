@@ -1,4 +1,6 @@
-﻿namespace PreludeLib.Runtime.Registry;
+﻿using HarmonyLib;
+
+namespace PreludeLib.Runtime.Registry;
 
 public readonly struct PatchGroup(Type containerType) : IEquatable<PatchGroup>
 {
@@ -14,5 +16,5 @@ public readonly struct PatchGroup(Type containerType) : IEquatable<PatchGroup>
         => (ContainerType != null ? ContainerType.GetHashCode() : 0);
 
     public string FullDescription()
-        => ContainerType != null ? ContainerType.FullName ?? ContainerType.Name : "Default";
+        => ContainerType != null ? ContainerType.FullDescription() : "Default";
 }

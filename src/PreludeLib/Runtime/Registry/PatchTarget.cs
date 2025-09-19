@@ -5,34 +5,28 @@ namespace PreludeLib.Runtime.Registry;
 
 public readonly struct PatchTarget : IEquatable<PatchTarget>
 {
+    public readonly PatchGroup Group;
     public readonly MethodBase? OriginalMethod;
     public readonly MethodInfo? TargetMethod;
 
-    private PatchTarget(MethodBase? original, MethodInfo? target)
+    private PatchTarget(PatchGroup group, MethodBase? original, MethodInfo? targetMethod)
     {
+        Group = group;
         OriginalMethod = original;
-        TargetMethod = target;
+        TargetMethod = targetMethod;
     }
+
+    public bool IsFromOriginal
+        => OriginalMethod != null;
     
-    public static PatchTarget FromOriginal(MethodBase original)
-        => new(original, null);
+    public bool IsFromTargetMethod
+        => TargetMethod != null;
+
+    public static PatchTarget FromOriginal(MethodBase original, PatchGroup group)
+        => new(group, original, null);
     
-    public static PatchTarget FromTargetMethod(MethodInfo target)
-        => new(null, target);
-
-    public bool Equals(PatchTarget other)
-        => Equals(OriginalMethod, other.OriginalMethod) && Equals(TargetMethod, other.TargetMethod);
-
-    public override bool Equals(object? obj)
-        => obj is PatchTarget other && Equals(other);
-
-    public override int GetHashCode()
-    {
-        unchecked
-        {
-            return ((OriginalMethod != null ? OriginalMethod.GetHashCode() : 0) * 397) ^ (TargetMethod != null ? TargetMethod.GetHashCode() : 0);
-        }
-    }
+    public static PatchTarget FromTargetMethod(MethodInfo targetMethod, PatchGroup group)
+        => new(group, null, targetMethod);
 
     public string FullDescription()
     {
@@ -41,5 +35,26 @@ public readonly struct PatchTarget : IEquatable<PatchTarget>
         if (TargetMethod != null)
             return TargetMethod.FullDescription();
         return "Empty patch target";
+    }
+
+    public bool Equals(PatchTarget other)
+        => Group.Equals(other.Group) &&
+           Equals(OriginalMethod, other.OriginalMethod) &&
+           Equals(TargetMethod, other.TargetMethod);
+
+    public override bool Equals(object? obj)
+    {
+        return obj is PatchTarget other && Equals(other);
+    }
+
+    public override int GetHashCode()
+    {
+        unchecked
+        {
+            var hashCode = Group.GetHashCode();
+            hashCode = (hashCode * 397) ^ (OriginalMethod != null ? OriginalMethod.GetHashCode() : 0);
+            hashCode = (hashCode * 397) ^ (TargetMethod != null ? TargetMethod.GetHashCode() : 0);
+            return hashCode;
+        }
     }
 }

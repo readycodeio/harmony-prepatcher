@@ -17,7 +17,7 @@ internal class CompileTimeRegistryBuilder(ICompileTimePatchRegistry registry, IL
         }
     }
     
-    public void ScanAndPatchCategory(AssemblyDefinition patchAssemblyDef, string category)
+    public void ScanAndPatchCategory(AssemblyDefinition patchAssemblyDef, string? category)
     {
         foreach (var typeDef in GetMatchingTypeDefs(patchAssemblyDef, category))
         {
@@ -51,37 +51,134 @@ internal class CompileTimeRegistryBuilder(ICompileTimePatchRegistry registry, IL
 
     public void ScanAndPatch(TypeDefinition containerTypeDef)
     {
-        var methodsList = CompileTimePreludeMethodUtils.GetFromTypeDef(containerTypeDef);
+        var targets = GetBulkMethods(containerTypeDef);
+        // NOTE: Skipping reverse patch feature
+        // ReversePatch(ref lastOriginal);
+
+        if (targets.Count > 0)
+            BulkPatch(containerTypeDef, targets);
+        else
+            PatchWithAttributes(containerTypeDef);
+    }
+    
+    private List<CompileTimePatchTarget> GetBulkMethods(TypeDefinition containerTypeDef)
+    {
+        var harmonyAttributes = CompileTimePreludeMethodUtils.GetFromTypeDef(containerTypeDef);
+        var containerAttributes = CompileTimePreludeMethod.Merge(harmonyAttributes);
+        containerAttributes.MethodType ??= MethodType.Normal;
         
+        var group = new CompileTimePatchGroup(containerTypeDef);
+        var isPatchAll = containerTypeDef.CustomAttributes.Any(a => a.AttributeType.FullName == PatchTools.harmonyPatchAllFullName);
+        if (isPatchAll)
+        {
+            var type = containerAttributes.DeclaringType;
+            if (type is null)
+                throw new ArgumentException($"Using {PatchTools.harmonyPatchAllFullName} requires an additional attribute for specifying the Class/Type");
+
+            var list = new List<CompileTimePatchTarget>();
+            list.AddRange(CompileTimeAccessTools.GetDeclaredConstructors(type).Select(x => CompileTimePatchTarget.FromOriginal(x, group)));
+            list.AddRange(CompileTimeAccessTools.GetDeclaredMethods(type).Select(x => CompileTimePatchTarget.FromOriginal(x, group)));
+            var props = CompileTimeAccessTools.GetDeclaredProperties(type);
+            list.AddRange(props.Select(prop => prop.GetMethod).Where(method => method is not null).Select(x => CompileTimePatchTarget.FromOriginal(x, group)));
+            list.AddRange(props.Select(prop => prop.SetMethod).Where(method => method is not null).Select(x => CompileTimePatchTarget.FromOriginal(x, group)));
+            return list;
+        }
+
+        var harmonyTargetListMethod = CompileTimePatchTools.GetPatchMethod(containerTypeDef, typeof(HarmonyTargetMethods).FullName!);
+        if (harmonyTargetListMethod != null)
+        {
+            return [CompileTimePatchTarget.FromTargetMethod(harmonyTargetListMethod, containerAttributes.DeclaringType!.Resolve(), group)];
+        }
+
+        // var targetMethods = RunMethod<HarmonyTargetMethods, IEnumerable<MethodBase>>(null, null);
+        /*
+        if (targetMethods is object)
+        {
+            string error = null;
+            result = [.. targetMethods];
+            if (result is null)
+                error = "null";
+            else if (result.Any(m => m is null))
+                error = "some element was null";
+            if (error != null)
+            {
+                if (_auxiliaryMethods.TryGetValue(typeof(HarmonyTargetMethods), out var method))
+                    throw new Exception($"Method {method.FullDescription()} returned an unexpected result: {error}");
+                else
+                    throw new Exception($"Some method returned an unexpected result: {error}");
+            }
+            return result;
+        }
+        */
+
+        var harmonyTargetMethod = CompileTimePatchTools.GetPatchMethod(containerTypeDef, typeof(HarmonyTargetMethod).FullName!);
+        if (harmonyTargetMethod != null)
+        {
+            return [CompileTimePatchTarget.FromTargetMethod(harmonyTargetMethod, containerAttributes.DeclaringType!.Resolve(), group)];
+        }
+
+        // var targetMethod = RunMethod<HarmonyTargetMethod, MethodBase>(null, null, method => method is null ? "null" : null);
+        /*
+        if (targetMethod is not null)
+            result.Add(targetMethod);
+        */
+
+        return [];
+    }
+
+    private List<CompileTimeAttributePatch> GetPatchMethods(TypeDefinition containerTypeDef)
+    {
+        var harmonyAttributes = CompileTimePreludeMethodUtils.GetFromTypeDef(containerTypeDef);
+        var containerAttributes = CompileTimePreludeMethod.Merge(harmonyAttributes);
+        containerAttributes.MethodType ??= MethodType.Normal;
+        
+        List<CompileTimeAttributePatch> patchMethods = CompileTimePatchTools.GetPatchMethods(containerTypeDef);
+        foreach (var patchMethod in patchMethods)
+        {
+            var method = patchMethod.Info.Method;
+            patchMethod.Info = containerAttributes.Merge(patchMethod.Info);
+            patchMethod.Info.Method = method;
+        }
+
+        return patchMethods;
+    }
+    
+    private void BulkPatch(TypeDefinition containerTypeDef, List<CompileTimePatchTarget> targets)
+    {
+        var patchMethods = GetPatchMethods(containerTypeDef);
+
+        var methodsList = CompileTimePreludeMethodUtils.GetFromTypeDef(containerTypeDef);
         var containerAttrs = CompileTimePreludeMethod.Merge(methodsList);
         containerAttrs.MethodType ??= MethodType.Normal;
 
-        foreach (var auxMethodName in _auxiliaryMethodNames)
+        for (var i = 0; i < targets.Count; i++)
         {
-            if (containerTypeDef.Methods.Any(m => m.Name == auxMethodName))
+            var lastTarget = targets[i];
+            foreach (var patchMethod in patchMethods)
             {
-                logger.LogWarning("Auxiliary methods are not supported in compile-time patching: {AuxMethod} in {ContainerType}", auxMethodName, containerTypeDef.FullName);
-                // throw new ArgumentException($"Auxiliary methods are not supported in compile-time patching: {auxMethodName} in {containerTypeDef.FullName}");
+                Patch(lastTarget, patchMethod);
             }
         }
-        
-        var patchMethods = CompileTimePreludeCecilUtils.GetPatchMethods(containerTypeDef);
+    }
+    
+    private void PatchWithAttributes(TypeDefinition containerTypeDef)
+    {
+        var patchMethods = GetPatchMethods(containerTypeDef);
+
+        var group = new CompileTimePatchGroup(containerTypeDef);
         foreach (var patchMethod in patchMethods)
         {
-            var method = patchMethod.PatchMethod.Method;
-            patchMethod.PatchMethod = containerAttrs.Merge(patchMethod.PatchMethod);
-            patchMethod.PatchMethod.Method = method;
-            
-            var original = patchMethod.PatchMethod.GetOriginalMethod();
-            if (original == null)
-                continue;
-            
-            Patch(original, patchMethod);
+            var methodRef = patchMethod.Info.GetOriginalMethod();
+            var lastTarget = CompileTimePatchTarget.FromOriginal(methodRef!.Resolve(), group);
+            if (lastTarget.OriginalMethodDef is null)
+                throw new ArgumentException($"Undefined target method for patch method {patchMethod.Info.Method.FullDescription()}");
+
+            Patch(lastTarget, patchMethod);
         }
     }
     
     public void Patch(
-        MethodDefinition originalDef,
+        CompileTimePatchTarget target,
         CompileTimePreludeMethod? prefix = null,
         CompileTimePreludeMethod? postfix = null,
         CompileTimePreludeMethod? finalizer = null,
@@ -89,45 +186,38 @@ internal class CompileTimeRegistryBuilder(ICompileTimePatchRegistry registry, IL
     )
     {
         if (prefix != null)
-            Patch(originalDef, HarmonyPatchType.Prefix, prefix);
+            Patch(target, HarmonyPatchType.Prefix, prefix);
         if (postfix != null)
-            Patch(originalDef, HarmonyPatchType.Postfix, postfix);
+            Patch(target, HarmonyPatchType.Postfix, postfix);
         if (finalizer != null)
-            Patch(originalDef, HarmonyPatchType.Finalizer, finalizer);
+            Patch(target, HarmonyPatchType.Finalizer, finalizer);
         if (transpiler != null)
             throw new NotSupportedException("Transpilers are not supported.");
         // processor.AddInfix(infix);
     }
     
-    public void Patch(MethodReference originalDef, CompileTimePreludePatch patch)
+    public void Patch(CompileTimePatchTarget target, CompileTimeAttributePatch patch)
     {
-        Patch(originalDef, patch.PatchType, patch.PatchMethod);
+        Patch(target, patch.PatchType, patch.Info);
     }
 
-    public void Patch(MethodReference originalDef, HarmonyPatchType patchType, CompileTimePreludeMethod patchMethod)
+    public void Patch(CompileTimePatchTarget target, HarmonyPatchType patchType, CompileTimePreludeMethod patchMethod)
     {
-        registry.AddOriginalMethod(originalDef);
-        registry.AddPatchMethod(originalDef, patchType, patchMethod);
+        registry.AddGroup(target.Group);
+        registry.AddTarget(target);
+        registry.AddPatchMethod(target, patchType, patchMethod);
     }
 
-    public void PatchPrefix(MethodReference originalDef, CompileTimePreludeMethod prefix)
-        => Patch(originalDef, HarmonyPatchType.Prefix, prefix);
+    public void PatchPrefix(CompileTimePatchTarget target, CompileTimePreludeMethod prefix)
+        => Patch(target, HarmonyPatchType.Prefix, prefix);
 
-    public void PatchPostfix(MethodReference originalDef, CompileTimePreludeMethod prefix)
-        => Patch(originalDef, HarmonyPatchType.Postfix, prefix);
+    public void PatchPostfix(CompileTimePatchTarget target, CompileTimePreludeMethod postfix)
+        => Patch(target, HarmonyPatchType.Postfix, postfix);
 
-    public void PatchFinalizer(MethodReference originalDef, CompileTimePreludeMethod prefix)
-        => Patch(originalDef, HarmonyPatchType.Finalizer, prefix);
+    public void PatchFinalizer(CompileTimePatchTarget target, CompileTimePreludeMethod finalizer)
+        => Patch(target, HarmonyPatchType.Finalizer, finalizer);
     
     // ---
-    
-    private static readonly List<string> _auxiliaryMethodNames =
-    [
-        "Prepare",
-        "Cleanup",
-        "TargetMethod",
-        "TargetMethods"
-    ];
 
     private readonly Dictionary<AssemblyDefinition, List<TypeDefinition>> _allHarmonyPatchCache = new();
     private readonly Dictionary<AssemblyDefinition, Dictionary<string, List<TypeDefinition>>> _categoryPatchCache = new();
