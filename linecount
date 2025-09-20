@@ -1,0 +1,18 @@
+#!/bin/bash
+
+PATHS=(
+  "src/PreludeLib/"
+  "tests/"
+)
+
+all_code_lines=$(find ${PATHS[*]} -type f -name "*.cs" -print0 | xargs -0 cat | wc -l)
+test_lines=$(find ${PATHS[*]} -type f -name "*.cs" -path "tests/*" -print0 | xargs -0 cat | wc -l)
+code_lines=$(($all_code_lines - $test_lines))
+total_lines=$(($all_code_lines))
+
+echo "code: ${code_lines}"
+echo "test: ${test_lines}"
+echo "docs: ${docs_lines}"
+echo "Q ratio: $(($test_lines * 100 / $code_lines))%"
+echo "---"
+echo "total: ${total_lines}"
