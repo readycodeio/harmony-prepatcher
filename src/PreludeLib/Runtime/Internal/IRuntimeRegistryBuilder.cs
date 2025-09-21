@@ -7,9 +7,15 @@ namespace PreludeLib.Runtime.Internal;
 
 internal interface IRuntimeRegistryBuilder
 {
+    void ScanAndPatchAll();
     void ScanAndPatchAll(Assembly patchAssembly);
+    void ScanAndPatchAllCalling();
+    void ScanAndPatchCategory(Category category);
     void ScanAndPatchCategory(Assembly patchAssembly, Category category);
+    void ScanAndPatchCategoryCalling(Category category);
+    void ScanAndPatchUncategorized();
     void ScanAndPatchUncategorized(Assembly patchAssembly);
+    void ScanAndPatchUncategorizedCalling();
     void ScanAndPatch(Type containerType);
     
     void Patch(

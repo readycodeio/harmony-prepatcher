@@ -28,19 +28,19 @@ public class RuntimeHarmonyBackend(ILogger logger) : RuntimePerIdPatchBackendBas
         
         foreach (var patchMethod in removedPrefixes)
         {
-            logger.LogInformation("Unpatching {Original} prefix {Prefix}", original, patchMethod.method);
+            Logger.LogInformation("Unpatching {Original} prefix {Prefix}", original, patchMethod.method);
             harmony.Unpatch(original, patchMethod.method);
         }
 
         foreach (var patchMethod in removedPostfixes)
         {
-            logger.LogInformation("Unpatching {Original} postfix {Postfix}", original, patchMethod.method);
+            Logger.LogInformation("Unpatching {Original} postfix {Postfix}", original, patchMethod.method);
             harmony.Unpatch(original, patchMethod.method);
         }
 
         foreach (var patchMethod in removedFinalizers)
         {
-            logger.LogInformation("Unpatching {Original} finalizer {Finalizer}", original, patchMethod.method);
+            Logger.LogInformation("Unpatching {Original} finalizer {Finalizer}", original, patchMethod.method);
             harmony.Unpatch(original, patchMethod.method);
         }
         

@@ -2,6 +2,7 @@
 using System.Runtime.CompilerServices;
 using HarmonyLib;
 using PreludeLib.Common;
+using PreludeLib.Runtime.Public;
 using PreludeLib.Runtime.Registry;
 
 namespace PreludeLib.Runtime.Internal;
@@ -9,12 +10,34 @@ namespace PreludeLib.Runtime.Internal;
 public class RuntimeRegistryBuilder : IRuntimeRegistryBuilder
 {
     public string Id { get; }
-    
+
+    public void ScanAndPatchAll()
+    {
+        foreach (var asm in GetAllPatchAssemblies())
+        {
+            ScanAndPatchAll(asm);
+        }
+    }
+
     public void ScanAndPatchAll(Assembly patchAssembly)
     {
         foreach (var type in GetAllTypes(patchAssembly))
         {
             ScanAndPatch(type);
+        }
+    }
+
+    public void ScanAndPatchAllCalling()
+    {
+        var callingAsm = Assembly.GetCallingAssembly();
+        ScanAndPatchAll(callingAsm);
+    }
+
+    public void ScanAndPatchCategory(Category category)
+    {
+        foreach (var asm in GetAllPatchAssemblies())
+        {
+            ScanAndPatchCategory(asm, category);
         }
     }
 
@@ -26,12 +49,32 @@ public class RuntimeRegistryBuilder : IRuntimeRegistryBuilder
         }
     }
 
+    public void ScanAndPatchCategoryCalling(Category category)
+    {
+        var callingAsm = Assembly.GetCallingAssembly();
+        ScanAndPatchCategory(callingAsm, category);
+    }
+
+    public void ScanAndPatchUncategorized()
+    {
+        foreach (var asm in GetAllPatchAssemblies())
+        {
+            ScanAndPatchUncategorized(asm);
+        }
+    }
+
     public void ScanAndPatchUncategorized(Assembly patchAssembly)
     {
         foreach (var type in GetMatchingTypes(patchAssembly, category: Category.Uncategorized))
         {
             ScanAndPatch(type);
         }
+    }
+
+    public void ScanAndPatchUncategorizedCalling()
+    {
+        var  callingAsm = Assembly.GetCallingAssembly();
+        ScanAndPatchUncategorized(callingAsm);
     }
 
     public void ScanAndPatch(Type containerType)
@@ -281,5 +324,19 @@ public class RuntimeRegistryBuilder : IRuntimeRegistryBuilder
         var allTypes = GetAllTypes(patchAssembly);
         result.AddRange(allTypes.Where(typeDef => GetCategory(typeDef) == category).ToList());
         return result;
+    }
+
+    private IEnumerable<Assembly> GetAllPatchAssemblies()
+    {
+        var preludeAsm = typeof(RuntimePrelude).Assembly;
+        var preludeAsmName = preludeAsm.FullName;
+        
+        foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+        {
+            if (asm.GetReferencedAssemblies().All(asmRef => asmRef.Name != preludeAsmName))
+                continue;
+
+            yield return asm;
+        }
     }
 }

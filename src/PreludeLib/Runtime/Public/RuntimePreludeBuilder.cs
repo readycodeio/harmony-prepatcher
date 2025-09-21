@@ -12,14 +12,32 @@ public class RuntimePreludeBuilder(RuntimePrelude owner, string id, IRuntimePatc
     private readonly RuntimePrelude _owner = owner;
     private readonly RuntimeRegistryBuilder _builder = new(id, registry);
 
+    public void ScanAndPatchAll()
+        => _builder.ScanAndPatchAll();
+
     public void ScanAndPatchAll(Assembly patchAssembly)
         => _builder.ScanAndPatchAll(patchAssembly);
+
+    public void ScanAndPatchAllCalling()
+        => _builder.ScanAndPatchAllCalling();
+
+    public void ScanAndPatchCategory(Category category)
+        => _builder.ScanAndPatchCategory(category);
 
     public void ScanAndPatchCategory(Assembly patchAssembly, Category category)
         => _builder.ScanAndPatchCategory(patchAssembly, category);
 
+    public void ScanAndPatchCategoryCalling(Category category)
+        => _builder.ScanAndPatchCategoryCalling(category);
+
+    public void ScanAndPatchUncategorized()
+        => _builder.ScanAndPatchUncategorized();
+
     public void ScanAndPatchUncategorized(Assembly patchAssembly)
         => _builder.ScanAndPatchUncategorized(patchAssembly);
+
+    public void ScanAndPatchUncategorizedCalling()
+        => _builder.ScanAndPatchUncategorizedCalling();
 
     public void ScanAndPatch(Type containerType)
         => _builder.ScanAndPatch(containerType);
