@@ -1,6 +1,7 @@
-﻿using System.Diagnostics;
-using Mono.Cecil;
-using Mono.Cecil.Rocks;
+﻿extern alias OfficialCecil;
+using System.Diagnostics;
+using OfficialCecil::Mono.Cecil;
+using OfficialCecil::Mono.Cecil.Rocks;
 
 namespace PreludeLib.CompileTime.Utils;
 

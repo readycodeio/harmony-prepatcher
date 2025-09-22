@@ -1,20 +1,21 @@
-﻿using System.Reflection;
+﻿extern alias OfficialCecil;
+using System.Reflection;
 using HarmonyLib;
 using Microsoft.Extensions.Logging;
-using Mono.Cecil;
-using Mono.Cecil.Cil;
-using Mono.Cecil.Rocks;
+using OfficialCecil::Mono.Cecil;
+using OfficialCecil::Mono.Cecil.Cil;
+using OfficialCecil::Mono.Cecil.Rocks;
 using PreludeLib.Compat;
 using PreludeLib.CompileTime.Public;
 using PreludeLib.CompileTime.Utils;
 using static PreludeLib.CompileTime.Utils.CompileTimePreludeCecilUtils;
-using EventAttributes = Mono.Cecil.EventAttributes;
-using FieldAttributes = Mono.Cecil.FieldAttributes;
-using MethodAttributes = Mono.Cecil.MethodAttributes;
-using MethodBody = Mono.Cecil.Cil.MethodBody;
-using MethodImplAttributes = Mono.Cecil.MethodImplAttributes;
-using ParameterAttributes = Mono.Cecil.ParameterAttributes;
-using TypeAttributes = Mono.Cecil.TypeAttributes;
+using EventAttributes = OfficialCecil::Mono.Cecil.EventAttributes;
+using FieldAttributes = OfficialCecil::Mono.Cecil.FieldAttributes;
+using MethodAttributes = OfficialCecil::Mono.Cecil.MethodAttributes;
+using MethodBody = OfficialCecil::Mono.Cecil.Cil.MethodBody;
+using MethodImplAttributes = OfficialCecil::Mono.Cecil.MethodImplAttributes;
+using ParameterAttributes = OfficialCecil::Mono.Cecil.ParameterAttributes;
+using TypeAttributes = OfficialCecil::Mono.Cecil.TypeAttributes;
 
 namespace PreludeLib.CompileTime.Backend.WeaverCallback;
 

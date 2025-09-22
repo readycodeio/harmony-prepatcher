@@ -1,6 +1,5 @@
-﻿using System;
-using System.IO;
-using Mono.Cecil;
+﻿extern alias OfficialCecil;
+using OfficialCecil::Mono.Cecil;
 
 namespace PreludeLib.Utils;
 

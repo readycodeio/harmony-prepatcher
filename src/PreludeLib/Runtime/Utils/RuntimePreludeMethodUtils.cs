@@ -58,48 +58,6 @@ public static class RuntimePreludeMethodUtils
         }
     }
     
-    private static readonly Dictionary<ConstructorInfo, MethodInfo> _constructorCache = new();
-    
-    public static MethodInfo WrapConstructor(ConstructorInfo ctor)
-    {
-        if (_constructorCache.TryGetValue(ctor, out var cached))
-            return cached;
-        
-        var paramTypes = ctor.GetParameters().Select(p => p.ParameterType).ToArray();
-        var declaring = ctor.DeclaringType!;
-
-        var dm = new DynamicMethod(
-            name: $"{declaring.Name}_ctor_wrapper",
-            returnType: declaring,
-            parameterTypes: paramTypes,
-            m: declaring.Module,
-            skipVisibility: true);
-
-        var il = dm.GetILGenerator();
-
-        // Push all arguments
-        for (var i = 0; i < paramTypes.Length; i++)
-        {
-            il.Emit(OpCodes.Ldarg_S, (short)i);
-        }
-
-        il.Emit(OpCodes.Newobj, ctor);
-        il.Emit(OpCodes.Ret);
-
-        _constructorCache.Add(ctor, dm);
-        return dm; // This is a MethodInfo
-    }
-
-    public static MethodInfo WrapMethod(MethodBase method)
-    {
-        if (method is MethodInfo mi)
-            return mi;
-        else if (method is ConstructorInfo ci)
-            return WrapConstructor(ci);
-        else
-            throw new NotSupportedException("Only methods and constructors can be wrapped");
-    }
-    
     private static readonly AssemblyBuilder _cacheAssembly =
         AssemblyBuilder.DefineDynamicAssembly(new AssemblyName("DynamicDelegates"), AssemblyBuilderAccess.Run);
     private static readonly ModuleBuilder _cacheModule = _cacheAssembly.DefineDynamicModule("DynamicDelegates");

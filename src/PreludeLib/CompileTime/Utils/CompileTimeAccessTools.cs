@@ -1,9 +1,10 @@
-﻿using System.Collections;
+﻿extern alias OfficialCecil;
+using System.Collections;
 using System.Reflection;
 using System.Runtime.CompilerServices;
-using Mono.Cecil;
-using Mono.Cecil.Cil;
-using Mono.Cecil.Rocks;
+using OfficialCecil::Mono.Cecil;
+using OfficialCecil::Mono.Cecil.Cil;
+using OfficialCecil::Mono.Cecil.Rocks;
 
 namespace PreludeLib.CompileTime.Utils;
 

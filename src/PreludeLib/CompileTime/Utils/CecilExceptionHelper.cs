@@ -1,5 +1,6 @@
-﻿using Mono.Cecil;
-using Mono.Cecil.Cil;
+﻿extern alias OfficialCecil;
+using OfficialCecil::Mono.Cecil;
+using OfficialCecil::Mono.Cecil.Cil;
 
 namespace PreludeLib.CompileTime.Utils;
 

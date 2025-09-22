@@ -1,6 +1,7 @@
-﻿using HarmonyLib;
+﻿extern alias OfficialCecil;
+using HarmonyLib;
 using Microsoft.Extensions.Logging;
-using Mono.Cecil;
+using OfficialCecil::Mono.Cecil;
 using PreludeLib.Common;
 using PreludeLib.CompileTime.Public;
 using PreludeLib.CompileTime.Registry;

@@ -1,6 +1,7 @@
-﻿using HarmonyLib;
-using Mono.Cecil;
-using Mono.Cecil.Rocks;
+﻿extern alias OfficialCecil;
+using HarmonyLib;
+using OfficialCecil::Mono.Cecil;
+using OfficialCecil::Mono.Cecil.Rocks;
 using PreludeLib.CompileTime.Utils;
 
 namespace PreludeLib.CompileTime.Public;

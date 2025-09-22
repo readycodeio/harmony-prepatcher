@@ -1,5 +1,6 @@
-﻿using Microsoft.Extensions.Logging;
-using Mono.Cecil;
+﻿extern alias OfficialCecil;
+using Microsoft.Extensions.Logging;
+using OfficialCecil::Mono.Cecil;
 
 namespace PreludeLib.CompileTime.Backend;
 

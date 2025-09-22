@@ -1,5 +1,6 @@
-﻿using Microsoft.Extensions.Logging;
-using Mono.Cecil;
+﻿extern alias OfficialCecil;
+using Microsoft.Extensions.Logging;
+using OfficialCecil::Mono.Cecil;
 using PreludeLib.CompileTime.Public;
 using PreludeLib.CompileTime.Registry;
 
