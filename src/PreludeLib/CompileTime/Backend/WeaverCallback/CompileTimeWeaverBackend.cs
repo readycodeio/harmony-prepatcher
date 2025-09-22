@@ -4,7 +4,6 @@ using Microsoft.Extensions.Logging;
 using Mono.Cecil;
 using Mono.Cecil.Cil;
 using Mono.Cecil.Rocks;
-using MonoMod.Utils;
 using PreludeLib.Compat;
 using PreludeLib.CompileTime.Public;
 using PreludeLib.CompileTime.Utils;
@@ -98,9 +97,10 @@ public class CompileTimeWeaverBackend(ILogger logger) : CompileTimeBackendBase(l
             moduleDef.ImportReference(patchDef.ReturnType)
         );
         delInvoke.ImplAttributes = MethodImplAttributes.Runtime | MethodImplAttributes.Managed;
-        delInvoke.Parameters.AddRange(
-	        patchDef.Parameters.Select(x => new ParameterDefinition(x.Name, x.Attributes, moduleDef.ImportReference(x.ParameterType)))
-        );
+        foreach (var param in patchDef.Parameters.Select(x => new ParameterDefinition(x.Name, x.Attributes, moduleDef.ImportReference(x.ParameterType))))
+        {
+	        delInvoke.Parameters.Add(param);
+        }
         delType.Methods.Add(delInvoke);
 
 		var typeDef = new TypeDefinition(
@@ -241,10 +241,13 @@ public class CompileTimeWeaverBackend(ILogger logger) : CompileTimeBackendBase(l
 	    var ts = module.TypeSystem;
 
 	    var fixes = prefixes.Concat(postfixes).Concat(finalizers).ToList();
-	    original.Injections.AddRange(fixes.ToDictionary(
-		    fix => fix,
-		    fix => fix.Method!.Parameters.Select(p => new InjectedParameter(fix.Method.Resolve(), p)).ToList()
-	    ));
+	    foreach (var d in fixes.ToDictionary(
+		             fix => fix,
+		             fix => fix.Method!.Parameters.Select(p => new InjectedParameter(fix.Method.Resolve(), p)).ToList()
+	             ))
+	    {
+		    original.Injections.Add(d.Key, d.Value);
+	    }
 
 	    if (fixes.Any() && !EqualTypeRef(originalDef.ReturnType, ts.Void))
 	    {
