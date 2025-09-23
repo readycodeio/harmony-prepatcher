@@ -155,17 +155,22 @@ public class CecilFlowHelper
         if (!removed)
             throw new InvalidOperationException("The instruction to remove was not found in the instruction list.");
     }
-
+    
     public void Replace(Instruction instr, Instruction newInstr)
     {
+        if (ReferenceEquals(instr, newInstr))
+            return;
+
         var index = _instructions.IndexOf(instr);
         if (index < 0)
             throw new InvalidOperationException("The instruction to replace was not found in the instruction list.");
+
         _instructions[index] = newInstr;
+
         if (_labels.TryGetValue(instr, out var instrLabels))
-            _labels.Add(newInstr, [..instrLabels]);
+            _labels[newInstr] = [..instrLabels];
         if (_blocks.TryGetValue(instr, out var instrBlocks))
-            _blocks.Add(newInstr, [..instrBlocks]);
+            _blocks[newInstr] = [..instrBlocks];
     }
 
     #endregion

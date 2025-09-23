@@ -437,7 +437,7 @@ public class CompileTimeWeaverBackend(ILogger logger) : CompileTimeBackendBase(l
         foreach (var exception in body.ExceptionHandlers)
         {
             outFlow.AddBlock(exception.TryStart, new CecilExceptionBlock(ExceptionBlockType.BeginExceptionBlock));
-            outFlow.AddBlock(exception.HandlerEnd, new CecilExceptionBlock(ExceptionBlockType.EndExceptionBlock));
+            outFlow.AddBlock(exception.HandlerEnd.Previous, new CecilExceptionBlock(ExceptionBlockType.EndExceptionBlock));
 
             // The FilterOffset property is meaningful only for Filter clauses.
             // The CatchType property is not meaningful for Filter or Finally clauses.
