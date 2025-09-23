@@ -3,7 +3,7 @@ using PreludeLib.Runtime;
 using PreludeLib.Runtime.Backend;
 using PreludeLib.Runtime.Backend.Dummy;
 
-namespace PreludeLib.Payload.OverloadArg;
+namespace PreludeLib.Tests.Payload.OverloadArg;
 
 public class DummyOverloadArgPayload(ILogger logger) : OverloadArgPayloadBase(false, logger)
 {

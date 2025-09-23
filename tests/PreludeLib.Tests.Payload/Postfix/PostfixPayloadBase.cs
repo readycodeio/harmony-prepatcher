@@ -3,7 +3,7 @@ using PreludeLib.Tests.Examples;
 using PreludeLib.Tests.Patches.Postfix;
 using Xunit;
 
-namespace PreludeLib.Payload.Postfix;
+namespace PreludeLib.Tests.Payload.Postfix;
 
 public abstract class PostfixPayloadBase(bool shouldPass, ILogger logger) : BackendPayloadBase(shouldPass, logger)
 {

@@ -2,7 +2,7 @@
 using PreludeLib.Runtime.Backend;
 using PreludeLib.Runtime.Backend.WeaverCallback;
 
-namespace PreludeLib.Payload.OverloadArg;
+namespace PreludeLib.Tests.Payload.OverloadArg;
 
 public class WeaverOverloadArgPayload(ILogger logger) : OverloadArgPayloadBase(true, logger)
 {

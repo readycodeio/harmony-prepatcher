@@ -3,7 +3,7 @@
  using PreludeLib.Runtime.Backend;
  using PreludeLib.Runtime.Backend.Dummy;
 
-namespace PreludeLib.Payload.SpecialInjection;
+namespace PreludeLib.Tests.Payload.SpecialInjection;
 
 public class DummySpecialInjectionPayload(ILogger logger) : SpecialInjectionPayloadBase(false, logger)
 {

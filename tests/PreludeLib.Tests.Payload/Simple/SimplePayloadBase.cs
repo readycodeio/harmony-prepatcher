@@ -7,7 +7,7 @@ using PreludeLib.Tests.Patches.Simple;
 using Xunit;
 using Xunit.Sdk;
 
-namespace PreludeLib.Payload.Simple;
+namespace PreludeLib.Tests.Payload.Simple;
 
 public abstract class SimplePayloadBase(bool shouldPass, ILogger logger) : BackendPayloadBase(shouldPass, logger)
 {

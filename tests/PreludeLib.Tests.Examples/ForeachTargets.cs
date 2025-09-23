@@ -41,4 +41,38 @@ public static class ForeachTargets
         k = 3;
         return 7;
     }
+
+    public static int NestedExample(int searchX, int searchY, int searchZ)
+    {
+        var lst = new List<int> { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 };
+        var lst2 = new List<int> { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 };
+
+        var result = false;
+        
+        foreach (var x in lst)
+        {
+            foreach (var y in lst2)
+            {
+                foreach (var z in lst2)
+                {
+                    if (x > 7 && y > 7 && z > 7)
+                        throw new InvalidOperationException("abc");
+                    
+                    if (x == searchX && y == searchY && z == searchZ)
+                    {
+                        result = true;
+                        goto earlyExit;
+                    }
+                }
+
+                if (searchZ == 9)
+                    throw new InvalidOperationException("def");
+            }
+        }
+        earlyExit:
+        if (result)
+            return 333;
+
+        return -1;
+    }
 }

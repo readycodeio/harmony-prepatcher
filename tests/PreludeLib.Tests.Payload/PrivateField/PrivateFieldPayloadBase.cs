@@ -3,7 +3,7 @@ using PreludeLib.Tests.Examples;
 using PreludeLib.Tests.Patches.PrivateField;
 using Xunit;
 
-namespace PreludeLib.Payload.PrivateField;
+namespace PreludeLib.Tests.Payload.PrivateField;
 
 public abstract class PrivateFieldPayloadBase(bool shouldPass, ILogger logger) : BackendPayloadBase(shouldPass, logger)
 {

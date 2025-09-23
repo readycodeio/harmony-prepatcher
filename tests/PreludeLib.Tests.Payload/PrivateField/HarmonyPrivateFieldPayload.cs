@@ -2,7 +2,7 @@
 using PreludeLib.Runtime.Backend;
 using PreludeLib.Runtime.Backend.HarmonyDetour;
 
-namespace PreludeLib.Payload.PrivateField;
+namespace PreludeLib.Tests.Payload.PrivateField;
 
 public class HarmonyPrivateFieldPayload(ILogger logger) : PrivateFieldPayloadBase(true, logger)
 {

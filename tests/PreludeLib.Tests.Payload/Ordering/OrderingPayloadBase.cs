@@ -3,7 +3,7 @@ using PreludeLib.Tests.Examples;
 using PreludeLib.Tests.Patches.Ordering;
 using Xunit;
 
-namespace PreludeLib.Payload.Ordering;
+namespace PreludeLib.Tests.Payload.Ordering;
 
 public abstract class OrderingPayloadBase(bool shouldPass, ILogger logger) : BackendPayloadBase(shouldPass, logger)
 {

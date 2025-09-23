@@ -3,7 +3,7 @@ using PreludeLib.Tests.Examples;
 using PreludeLib.Tests.Patches.OverloadArg;
 using Xunit;
 
-namespace PreludeLib.Payload.OverloadArg;
+namespace PreludeLib.Tests.Payload.OverloadArg;
 
 public abstract class OverloadArgPayloadBase(bool shouldPass, ILogger logger) : BackendPayloadBase(shouldPass, logger)
 {

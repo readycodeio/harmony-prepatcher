@@ -3,7 +3,7 @@ using PreludeLib.Runtime;
 using PreludeLib.Runtime.Backend;
 using PreludeLib.Runtime.Backend.Dummy;
 
-namespace PreludeLib.Payload.Targeting;
+namespace PreludeLib.Tests.Payload.Targeting;
 
 public class DummyTargetingPayload(ILogger logger) : TargetingPayloadBase(false, logger)
 {

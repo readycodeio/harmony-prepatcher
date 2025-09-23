@@ -2,7 +2,7 @@
 using PreludeLib.Runtime.Backend;
 using PreludeLib.Runtime.Backend.HarmonyDetour;
 
-namespace PreludeLib.Payload.PropertyTargets;
+namespace PreludeLib.Tests.Payload.PropertyTargets;
 
 public class HarmonyPropertyTargetsPayload(ILogger logger) : PropertyTargetsPayloadBase(true, logger)
 {

@@ -2,7 +2,7 @@
 using PreludeLib.Runtime.Backend;
 using PreludeLib.Runtime.Backend.Dummy;
 
-namespace PreludeLib.Payload.PropertyTargets;
+namespace PreludeLib.Tests.Payload.PropertyTargets;
 
 public class DummyPropertyTargetsPayload(ILogger logger) : PropertyTargetsPayloadBase(false, logger)
 {

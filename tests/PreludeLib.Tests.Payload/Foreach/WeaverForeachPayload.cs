@@ -2,9 +2,9 @@
 using PreludeLib.Runtime.Backend;
 using PreludeLib.Runtime.Backend.WeaverCallback;
 
-namespace PreludeLib.Tests.Payload.PrivateField;
+namespace PreludeLib.Tests.Payload.Foreach;
 
-public class WeaverPrivateFieldPayload(ILogger logger) : PrivateFieldPayloadBase(true, logger)
+public class WeaverForeachPayload(ILogger logger) : ForeachPayloadBase(true, logger)
 {
     protected override IRuntimeBackend CreateBackend()
         => new RuntimeWeaverBackend(Logger);

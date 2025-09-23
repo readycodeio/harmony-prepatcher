@@ -2,7 +2,7 @@
 using PreludeLib.Runtime.Backend;
 using PreludeLib.Runtime.Backend.Dummy;
 
-namespace PreludeLib.Payload.Categories;
+namespace PreludeLib.Tests.Payload.Categories;
 
 public class DummyCategoryPayload(ILogger logger) : CategoryPayloadBase(false, logger)
 {

@@ -1,11 +1,10 @@
 ﻿using Microsoft.Extensions.Logging;
-using PreludeLib.Runtime;
 using PreludeLib.Runtime.Backend;
 using PreludeLib.Runtime.Backend.Dummy;
 
-namespace PreludeLib.Tests.Payload.Postfix;
+namespace PreludeLib.Tests.Payload.Foreach;
 
-public class DummyPostfixPayload(ILogger logger) : PostfixPayloadBase(false, logger)
+public class DummyForeachPayload(ILogger logger) : ForeachPayloadBase(false, logger)
 {
     protected override IRuntimeBackend CreateBackend()
         => new RuntimeDummyBackend();

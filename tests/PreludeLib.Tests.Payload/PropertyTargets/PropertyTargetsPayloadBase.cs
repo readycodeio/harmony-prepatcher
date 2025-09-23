@@ -3,7 +3,7 @@ using PreludeLib.Tests.Examples;
 using PreludeLib.Tests.Patches.PropertyTargets;
 using Xunit;
 
-namespace PreludeLib.Payload.PropertyTargets;
+namespace PreludeLib.Tests.Payload.PropertyTargets;
 
 public abstract class PropertyTargetsPayloadBase(bool shouldPass, ILogger logger) : BackendPayloadBase(shouldPass, logger)
 {

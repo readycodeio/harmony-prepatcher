@@ -3,7 +3,7 @@ using PreludeLib.Runtime;
 using PreludeLib.Runtime.Backend;
 using PreludeLib.Runtime.Backend.Dummy;
 
-namespace PreludeLib.Payload.Prefix;
+namespace PreludeLib.Tests.Payload.Prefix;
 
 public class DummyPrefixPayload(ILogger logger) : PrefixPayloadBase(false, logger)
 {

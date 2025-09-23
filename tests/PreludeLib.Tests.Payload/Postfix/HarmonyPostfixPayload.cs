@@ -2,7 +2,7 @@
 using PreludeLib.Runtime.Backend;
 using PreludeLib.Runtime.Backend.HarmonyDetour;
 
-namespace PreludeLib.Payload.Postfix;
+namespace PreludeLib.Tests.Payload.Postfix;
 
 public class HarmonyPostfixPayload(ILogger logger) : PostfixPayloadBase(true, logger)
 {

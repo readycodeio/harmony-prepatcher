@@ -3,7 +3,7 @@ using PreludeLib.Runtime;
 using PreludeLib.Runtime.Backend;
 using PreludeLib.Runtime.Backend.Dummy;
 
-namespace PreludeLib.Payload.Unpatch;
+namespace PreludeLib.Tests.Payload.Unpatch;
 
 public class DummyUnpatchPayload(ILogger logger) : UnpatchPayloadBase(false, logger)
 {

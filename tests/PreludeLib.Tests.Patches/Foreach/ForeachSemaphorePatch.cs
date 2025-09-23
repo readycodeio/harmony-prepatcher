@@ -21,3 +21,33 @@ public class ForeachSemaphorePatch
         Semaphore.Release();
     }
 }
+
+[HarmonyPatch(typeof(ForeachTargets), nameof(ForeachTargets.NestedExample))]
+public class ForeachNestedPatch
+{
+    [HarmonyPrefix]
+    public static void Prefix(ref int searchX, ref int searchY, ref int searchZ)
+    {
+        searchX++;
+        searchY++;
+        searchZ++;
+    }
+
+    [HarmonyPostfix]
+    public static void Postfix(ref int __result)
+    {
+        if (__result == 333)
+            __result = 555;
+    }
+    
+    [HarmonyFinalizer]
+    public static Exception? Finalizer(Exception? __exception)
+    {
+        if (__exception == null)
+            return null;
+        else if (__exception.Message == "abc")
+            return new ArgumentException("xyz", __exception);
+        else
+            return __exception;
+    }
+}

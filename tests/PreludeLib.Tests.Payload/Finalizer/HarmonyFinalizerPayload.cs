@@ -2,7 +2,7 @@
 using PreludeLib.Runtime.Backend;
 using PreludeLib.Runtime.Backend.HarmonyDetour;
 
-namespace PreludeLib.Payload.Finalizer;
+namespace PreludeLib.Tests.Payload.Finalizer;
 
 public class HarmonyFinalizerPayload(ILogger logger) : FinalizerPayloadBase(true, logger)
 {

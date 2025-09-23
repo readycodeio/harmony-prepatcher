@@ -2,7 +2,7 @@
 using PreludeLib.Runtime.Backend;
 using PreludeLib.Runtime.Backend.WeaverCallback;
 
-namespace PreludeLib.Payload.Categories;
+namespace PreludeLib.Tests.Payload.Categories;
 
 public class WeaverCategoryPayload(ILogger logger) : CategoryPayloadBase(true, logger)
 {

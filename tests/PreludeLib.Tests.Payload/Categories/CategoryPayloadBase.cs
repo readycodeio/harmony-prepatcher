@@ -3,7 +3,7 @@ using PreludeLib.Tests.Examples;
 using PreludeLib.Tests.Patches.Categories;
 using Xunit;
 
-namespace PreludeLib.Payload.Categories;
+namespace PreludeLib.Tests.Payload.Categories;
 
 public abstract class CategoryPayloadBase(bool shouldPass, ILogger logger) : BackendPayloadBase(shouldPass, logger)
 {

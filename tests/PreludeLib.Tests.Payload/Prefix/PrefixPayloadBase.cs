@@ -3,7 +3,7 @@ using PreludeLib.Tests.Examples;
 using PreludeLib.Tests.Patches.Prefix;
 using Xunit;
 
-namespace PreludeLib.Payload.Prefix;
+namespace PreludeLib.Tests.Payload.Prefix;
 
 public abstract class PrefixPayloadBase(bool shouldPass, ILogger logger) : BackendPayloadBase(shouldPass, logger)
 {

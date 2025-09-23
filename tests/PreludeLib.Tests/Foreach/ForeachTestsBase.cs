@@ -8,4 +8,8 @@ public abstract class ForeachTestsBase(ITestOutputHelper output, ITestPreprocess
     [Fact]
     public void PatchedMethodDoesNotThrowInvalidIlException()
         => RunTestIsolated(nameof(PatchedMethodDoesNotThrowInvalidIlException));
+    
+    [Fact]
+    public void WorksWithNestedForeachLoops()
+        => RunTestIsolated(nameof(WorksWithNestedForeachLoops));
 }

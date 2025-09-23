@@ -6,7 +6,7 @@ using PreludeLib.Tests.Examples;
 using PreludeLib.Tests.Patches.Unpatch;
 using Xunit;
 
-namespace PreludeLib.Payload.Unpatch;
+namespace PreludeLib.Tests.Payload.Unpatch;
 
 public abstract class UnpatchPayloadBase(bool shouldPass, ILogger logger) : BackendPayloadBase(shouldPass, logger)
 {

@@ -2,7 +2,7 @@
 using PreludeLib.Runtime.Backend;
 using PreludeLib.Runtime.Backend.WeaverCallback;
 
-namespace PreludeLib.Payload.Postfix;
+namespace PreludeLib.Tests.Payload.Postfix;
 
 public class WeaverPostfixPayload(ILogger logger) : PostfixPayloadBase(true, logger)
 {

@@ -2,7 +2,7 @@
 using PreludeLib.Runtime.Backend;
 using PreludeLib.Runtime.Backend.WeaverCallback;
 
-namespace PreludeLib.Payload.SpecialInjection;
+namespace PreludeLib.Tests.Payload.SpecialInjection;
 
 public class WeaverSpecialInjectionPayload(ILogger logger) : SpecialInjectionPayloadBase(true, logger)
 {

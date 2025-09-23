@@ -2,7 +2,7 @@
 using PreludeLib.Runtime.Backend;
 using PreludeLib.Runtime.Backend.HarmonyDetour;
 
-namespace PreludeLib.Payload.Targeting;
+namespace PreludeLib.Tests.Payload.Targeting;
 
 public class HarmonyTargetingPayload(ILogger logger) : TargetingPayloadBase(true, logger)
 {

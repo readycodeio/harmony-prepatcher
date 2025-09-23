@@ -2,7 +2,7 @@
 using PreludeLib.Runtime.Backend;
 using PreludeLib.Runtime.Backend.HarmonyDetour;
 
-namespace PreludeLib.Payload.OverloadArg;
+namespace PreludeLib.Tests.Payload.OverloadArg;
 
 public class HarmonyOverloadArgPayload(ILogger logger) : OverloadArgPayloadBase(true, logger)
 {

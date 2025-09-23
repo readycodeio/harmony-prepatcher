@@ -51,7 +51,8 @@ public abstract class IsolatedBackendTestsBase(ITestOutputHelper output, ITestPr
         try
         {
             var asm = alc.LoadFromAssemblyPath(payloadPath);
-            var type = asm.GetType(GetType().FullName!.Replace("Tests", "Payload"))!;
+            var payloadTypeName = GetType().FullName!.Replace("Tests", "Payload").Replace(".Payload.", ".Tests.Payload.");
+            var type = asm.GetType(payloadTypeName)!;
             var typeInst = Activator.CreateInstance(type, logger);
 
             var t = type;

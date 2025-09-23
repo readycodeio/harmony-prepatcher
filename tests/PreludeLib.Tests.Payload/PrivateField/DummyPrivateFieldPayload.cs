@@ -3,7 +3,7 @@ using PreludeLib.Runtime;
 using PreludeLib.Runtime.Backend;
 using PreludeLib.Runtime.Backend.Dummy;
 
-namespace PreludeLib.Payload.PrivateField;
+namespace PreludeLib.Tests.Payload.PrivateField;
 
 public class DummyPrivateFieldPayload(ILogger logger) : PrivateFieldPayloadBase(false, logger)
 {

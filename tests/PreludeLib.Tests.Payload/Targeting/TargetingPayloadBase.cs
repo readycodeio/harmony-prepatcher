@@ -3,7 +3,7 @@ using PreludeLib.Tests.Examples;
 using PreludeLib.Tests.Patches.Targeting;
 using Xunit;
 
-namespace PreludeLib.Payload.Targeting;
+namespace PreludeLib.Tests.Payload.Targeting;
 
 public abstract class TargetingPayloadBase(bool shouldPass, ILogger logger) : BackendPayloadBase(shouldPass, logger)
 {

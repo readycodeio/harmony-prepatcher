@@ -3,7 +3,7 @@ using PreludeLib.Tests.Examples;
 using PreludeLib.Tests.Patches.SpecialInjection;
 using Xunit;
 
-namespace PreludeLib.Payload.SpecialInjection;
+namespace PreludeLib.Tests.Payload.SpecialInjection;
 
 public abstract class SpecialInjectionPayloadBase(bool shouldPass, ILogger logger) : BackendPayloadBase(shouldPass, logger)
 {

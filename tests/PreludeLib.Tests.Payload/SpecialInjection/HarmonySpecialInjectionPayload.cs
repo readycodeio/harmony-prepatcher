@@ -2,7 +2,7 @@
 using PreludeLib.Runtime.Backend;
 using PreludeLib.Runtime.Backend.HarmonyDetour;
 
-namespace PreludeLib.Payload.SpecialInjection;
+namespace PreludeLib.Tests.Payload.SpecialInjection;
 
 public class HarmonySpecialInjectionPayload(ILogger logger) : SpecialInjectionPayloadBase(true, logger)
 {

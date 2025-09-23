@@ -2,7 +2,7 @@
 using PreludeLib.Runtime.Backend;
 using PreludeLib.Runtime.Public;
 
-namespace PreludeLib.Payload;
+namespace PreludeLib.Tests.Payload;
 
 public abstract class BackendPayloadBase(bool shouldPass, ILogger logger)
 {

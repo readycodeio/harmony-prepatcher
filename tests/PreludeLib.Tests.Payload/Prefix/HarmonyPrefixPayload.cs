@@ -2,7 +2,7 @@
 using PreludeLib.Runtime.Backend;
 using PreludeLib.Runtime.Backend.HarmonyDetour;
 
-namespace PreludeLib.Payload.Prefix;
+namespace PreludeLib.Tests.Payload.Prefix;
 
 public class HarmonyPrefixPayload(ILogger logger) : PrefixPayloadBase(true, logger)
 {

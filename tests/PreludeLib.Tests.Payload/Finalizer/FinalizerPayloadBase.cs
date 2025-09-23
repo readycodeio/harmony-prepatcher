@@ -4,7 +4,7 @@ using PreludeLib.Tests.Patches.Finalizer;
 using Xunit;
 using Xunit.Sdk;
 
-namespace PreludeLib.Payload.Finalizer;
+namespace PreludeLib.Tests.Payload.Finalizer;
 
 public abstract class FinalizerPayloadBase(bool shouldPass, ILogger logger) : BackendPayloadBase(shouldPass, logger)
 {

@@ -2,7 +2,7 @@
 using PreludeLib.Runtime.Backend;
 using PreludeLib.Runtime.Backend.WeaverCallback;
 
-namespace PreludeLib.Payload.Ordering;
+namespace PreludeLib.Tests.Payload.Ordering;
 
 public class WeaverOrderingPayload(ILogger logger) : OrderingPayloadBase(true, logger)
 {

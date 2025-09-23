@@ -2,7 +2,7 @@
 using PreludeLib.Runtime.Backend;
 using PreludeLib.Runtime.Backend.WeaverCallback;
 
-namespace PreludeLib.Payload.Unpatch;
+namespace PreludeLib.Tests.Payload.Unpatch;
 
 public class WeaverUnpatchPayload(ILogger logger) : UnpatchPayloadBase(true, logger)
 {

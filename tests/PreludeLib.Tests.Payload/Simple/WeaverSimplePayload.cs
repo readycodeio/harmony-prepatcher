@@ -2,7 +2,7 @@
 using PreludeLib.Runtime.Backend;
 using PreludeLib.Runtime.Backend.WeaverCallback;
 
-namespace PreludeLib.Payload.Simple;
+namespace PreludeLib.Tests.Payload.Simple;
 
 public class WeaverSimplePayload(ILogger logger) : SimplePayloadBase(true, logger)
 {

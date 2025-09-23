@@ -2,7 +2,7 @@
 using PreludeLib.Runtime.Backend;
 using PreludeLib.Runtime.Backend.WeaverCallback;
 
-namespace PreludeLib.Payload.Finalizer;
+namespace PreludeLib.Tests.Payload.Finalizer;
 
 public class WeaverFinalizerPayload(ILogger logger) : FinalizerPayloadBase(true, logger)
 {
