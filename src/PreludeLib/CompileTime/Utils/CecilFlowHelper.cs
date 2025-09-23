@@ -28,11 +28,11 @@ public class CecilFlowHelper
     private readonly Dictionary<Instruction, List<CecilLabel>> _labels = [];
     private readonly Dictionary<Instruction, List<CecilExceptionBlock>> _blocks = [];
     private readonly List<CecilLabel> _labelsToMark = [];
-    
+
     public IReadOnlyList<Instruction> Instructions
         => _instructions;
 
-    #region  Labels
+    #region Labels
 
     public CecilLabel DefineLabel()
     {
@@ -49,9 +49,10 @@ public class CecilFlowHelper
             instrLabels = [];
             _labels.Add(instr, instrLabels);
         }
+
         instrLabels.Add(cecilLabel);
     }
-    
+
     public void AddLabels(Instruction instr, IEnumerable<CecilLabel> labels)
     {
         if (!_labels.TryGetValue(instr, out var instrLabels))
@@ -59,6 +60,7 @@ public class CecilFlowHelper
             instrLabels = [];
             _labels.Add(instr, instrLabels);
         }
+
         instrLabels.AddRange(labels);
     }
 
@@ -85,7 +87,7 @@ public class CecilFlowHelper
                     }
                 }
             }
-            
+
             if (!found)
                 throw new InvalidOperationException("A defined label was not marked on any instruction.");
         }
@@ -94,7 +96,7 @@ public class CecilFlowHelper
     #endregion
 
     #region Blocks
-    
+
     public void AddBlock(Instruction instr, CecilExceptionBlock block)
     {
         if (!_blocks.TryGetValue(instr, out var instrBlocks))
@@ -102,6 +104,7 @@ public class CecilFlowHelper
             instrBlocks = [];
             _blocks.Add(instr, instrBlocks);
         }
+
         instrBlocks.Add(block);
     }
 
@@ -112,6 +115,7 @@ public class CecilFlowHelper
             instrBlocks = [];
             _blocks.Add(instr, instrBlocks);
         }
+
         instrBlocks.AddRange(blocks);
     }
 
@@ -121,21 +125,21 @@ public class CecilFlowHelper
         blocks = lst ?? [];
         return result;
     }
-    
+
     #endregion
-    
+
     #region Instruction manipulation
 
     public void Append(Instruction instr)
     {
         _instructions.Add(instr);
     }
-    
+
     public void AppendAll(IEnumerable<Instruction> instrList)
     {
         _instructions.AddRange(instrList);
     }
-    
+
     public void AppendFlow(CecilFlowHelper flow)
     {
         _instructions.AddRange(flow._instructions);
@@ -144,7 +148,7 @@ public class CecilFlowHelper
         foreach (var (instr, blocks) in flow._blocks)
             AddBlocks(instr, [..blocks]);
     }
-    
+
     public void Remove(Instruction lastInstruction)
     {
         var removed = _instructions.Remove(lastInstruction);
@@ -163,6 +167,6 @@ public class CecilFlowHelper
         if (_blocks.TryGetValue(instr, out var instrBlocks))
             _blocks.Add(newInstr, [..instrBlocks]);
     }
-    
+
     #endregion
 }
