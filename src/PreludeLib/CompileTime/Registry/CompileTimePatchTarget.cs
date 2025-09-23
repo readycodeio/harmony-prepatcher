@@ -27,7 +27,7 @@ public readonly struct CompileTimePatchTarget : IEquatable<CompileTimePatchTarge
     public static CompileTimePatchTarget FromOriginal(MethodDefinition original, CompileTimePatchGroup group)
         => new(group, original, null, null);
     
-    public static CompileTimePatchTarget FromTargetMethod(MethodDefinition targetMethod, TypeDefinition declaringTypeDef, CompileTimePatchGroup group)
+    public static CompileTimePatchTarget FromTargetMethod(MethodDefinition targetMethod, TypeDefinition? declaringTypeDef, CompileTimePatchGroup group)
         => new(group, null, targetMethod, declaringTypeDef);
 
     public string FullDescription()

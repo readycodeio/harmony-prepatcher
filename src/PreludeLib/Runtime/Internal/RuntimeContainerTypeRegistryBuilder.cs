@@ -1,5 +1,6 @@
 ﻿using System.Reflection;
 using HarmonyLib;
+using Microsoft.Extensions.Logging;
 using PreludeLib.Runtime.Registry;
 
 namespace PreludeLib.Runtime.Internal;
@@ -80,14 +81,17 @@ internal readonly struct RuntimeContainerTypeRegistryBuilder
     
     private readonly RuntimeRegistryBuilder _owner;
     private readonly Type _containerType;
+    private readonly ILogger _logger;
+    
     private readonly HarmonyMethod _containerAttributes;
     private readonly Dictionary<Type, MethodInfo> _auxiliaryMethods;
     private readonly List<AttributePatch> _patchMethods;
 
-    internal RuntimeContainerTypeRegistryBuilder(RuntimeRegistryBuilder owner, Type type)
+    internal RuntimeContainerTypeRegistryBuilder(RuntimeRegistryBuilder owner, Type type, ILogger logger)
     {
         _owner = owner;
         _containerType = type;
+        _logger = logger;
         
         var harmonyAttributes = HarmonyMethodExtensions.GetFromType(type);
         _containerAttributes = HarmonyMethod.Merge(harmonyAttributes);
@@ -174,6 +178,11 @@ internal readonly struct RuntimeContainerTypeRegistryBuilder
     
     private void PatchWithAttributes(ref PatchTarget? lastTarget)
     {
+        if (_patchMethods.Count == 0)
+            _logger.LogError("Patching with attributes for patch container {ContainerType} (NO PATCHES)", _containerType.FullDescription());
+        else
+            _logger.LogDebug("Patching with attributes for patch container {ContainerType} ({Count} patch methods)", _containerType.FullDescription(), _patchMethods.Count);
+
         var jobs = new PatchJobs();
         foreach (var patchMethod in _patchMethods)
         {
@@ -224,6 +233,8 @@ internal readonly struct RuntimeContainerTypeRegistryBuilder
 
     private List<PatchTarget> GetBulkMethods()
     {
+        _logger.LogDebug("Getting bulk methods for patch container {ContainerType}", _containerType.FullDescription());
+        
         var isPatchAll = _containerType.GetCustomAttributes(true).Any(a => a.GetType().FullName == PatchTools.harmonyPatchAllFullName);
         if (isPatchAll)
         {
@@ -280,6 +291,7 @@ internal readonly struct RuntimeContainerTypeRegistryBuilder
             result.Add(targetMethod);
         */
 
+        _logger.LogDebug("No target method found for patch container {ContainerType}", _containerType.FullName);
         return [];
     }
 }

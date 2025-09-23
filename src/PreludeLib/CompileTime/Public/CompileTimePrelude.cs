@@ -1,6 +1,7 @@
 ﻿using HarmonyLib;
 using Microsoft.Extensions.Logging;
 using Mono.Cecil;
+using PreludeLib.Common;
 using PreludeLib.CompileTime.Backend;
 using PreludeLib.CompileTime.Internal;
 using PreludeLib.CompileTime.Registry;
@@ -13,6 +14,8 @@ public class CompileTimePrelude : ICompileTimeRegistryBuilder
     private readonly CompileTimeRegistryBuilder _builder;
     private readonly ICompileTimeBackend _backend;
     
+    public ICompileTimeBackend Backend => _backend;
+    
     public CompileTimePrelude(ICompileTimeBackend backend, ILogger logger)
     {
         _backend = backend;
@@ -24,7 +27,7 @@ public class CompileTimePrelude : ICompileTimeRegistryBuilder
     public void ScanAndPatchAll(AssemblyDefinition patchAssemblyDef)
         => _builder.ScanAndPatchAll(patchAssemblyDef);
 
-    public void ScanAndPatchCategory(AssemblyDefinition patchAssemblyDef, string? category)
+    public void ScanAndPatchCategory(AssemblyDefinition patchAssemblyDef, Category category)
         => _builder.ScanAndPatchCategory(patchAssemblyDef, category);
 
     public void ScanAndPatchUncategorized(AssemblyDefinition patchAssemblyDef)

@@ -2,6 +2,7 @@
 using Mono.Cecil.Rocks;
 using PreludeLib.Attributes;
 using PreludeLib.CompileTime.Registry;
+using PreludeLib.CompileTime.Utils;
 
 namespace PreludeLib.CompileTime.Backend;
 
@@ -42,13 +43,34 @@ internal static class CompileTimeBackendUtils
                     x.Constructor.DeclaringType.FullName == typeof(HarmonyTargetMethodHint).FullName)
                 .Select(x =>
                 {
-                    TypeReference? declaringType;
+                    TypeReference? declaringType = null;
                     string? methodName;
                     TypeReference[] methodParams;
 
                     if (x.ConstructorArguments.Count == 3)
                     {
-                        declaringType = (TypeReference)x.ConstructorArguments[0].Value;
+                        if (x.ConstructorArguments[0].Type.FullName == typeof(Type).FullName)
+                        {
+                            declaringType = (TypeReference)x.ConstructorArguments[0].Value;
+                        }
+                        else
+                        {
+                            var declaringTypeStr = x.ConstructorArguments[0].Value as string;
+                            var asmResolver = target.Group.ContainerTypeDef!.Module.AssemblyResolver;
+                            foreach (var asmRef in target.Group.ContainerTypeDef!.Module.AssemblyReferences)
+                            {
+                                var asmDef = asmResolver.Resolve(asmRef);
+                                foreach (var module in asmDef.Modules)
+                                {
+                                    declaringType = module.GetType(declaringTypeStr);
+                                    if (declaringType != null)
+                                        break;
+                                }
+                                if (declaringType != null)
+                                    break;
+                            }
+                        }
+                        
                         methodName = x.ConstructorArguments[1].Value as string;
                         var args = x.ConstructorArguments[2].Value as CustomAttributeArgument[];
                         methodParams = args?.Select(a => (TypeReference)a.Value).ToArray() ?? [];

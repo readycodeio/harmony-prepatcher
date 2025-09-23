@@ -412,7 +412,7 @@ public class CompileTimeWeaverBackend(ILogger logger) : CompileTimeBackendBase(l
 
 	    EmitCodes(il, flow);
 
-	    Logger.LogDebug("Patching: {Original} ==================", originalDef);
+	    Logger.LogDebug("Patching: {Original} ==================", originalDef.FullDescription());
 	    foreach (var instr in body.Instructions)
 	    {
 		    Logger.LogDebug(instr.ToString());

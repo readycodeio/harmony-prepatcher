@@ -7,10 +7,10 @@ namespace PreludeLib.Tests.Patches.OverloadArg;
 
 /// 15) PatchOverloadWithByRefArgumentUsingArgumentTypeRef
 /// Target OverloadArgTargets.Inc(ref int)
-[HarmonyPatch(typeof(OverloadArgTargets))]
+[HarmonyPatch]
 public static class IncRefOverloadPostfixPatch
 {
-    [HarmonyTargetMethodHint(nameof(OverloadArgTargets.Inc), [typeof(Ref<int>)])]
+    [HarmonyTargetMethodHint("PreludeLib.Tests.Examples.OverloadArgTargets", nameof(OverloadArgTargets.Inc), [typeof(Ref<int>)])]
     static MethodBase TargetMethod()
         => AccessTools.Method(typeof(OverloadArgTargets), nameof(OverloadArgTargets.Inc), [typeof(int).MakeByRefType()]);
     

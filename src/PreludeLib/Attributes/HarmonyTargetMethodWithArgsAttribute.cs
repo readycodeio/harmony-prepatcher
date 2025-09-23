@@ -12,4 +12,9 @@ public class HarmonyTargetMethodHint : Attribute
     {
         // empty
     }
+
+    public HarmonyTargetMethodHint(string declaringType, string methodName, params Type[] args)
+    {
+        // empty
+    }
 }

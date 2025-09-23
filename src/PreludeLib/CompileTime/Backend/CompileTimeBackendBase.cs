@@ -7,8 +7,10 @@ namespace PreludeLib.CompileTime.Backend;
 
 public abstract class CompileTimeBackendBase(ILogger logger) : ICompileTimeBackend
 {
-
 	protected readonly ILogger Logger = logger;
+
+	private readonly List<AssemblyDefinition> _patchedAssemblies = [];
+	private readonly HashSet<AssemblyDefinition> _patchedAssembliesSet = [];
 
 	protected abstract void DoPatch(
 		MethodDefinition original,
@@ -113,6 +115,11 @@ public abstract class CompileTimeBackendBase(ILogger logger) : ICompileTimeBacke
 				addedPrefixes,
 				addedPostfixes,
 				addedFinalizers);
+
+			if (_patchedAssembliesSet.Add(original.Module.Assembly))
+			{
+				_patchedAssemblies.Add(original.Module.Assembly);
+			}
 	    }
 	    
 	    foreach (var group in openGroups)
@@ -121,4 +128,6 @@ public abstract class CompileTimeBackendBase(ILogger logger) : ICompileTimeBacke
 	    }
     }
 
+    public IEnumerable<AssemblyDefinition> PatchedAssemblies
+		=> _patchedAssemblies;
 }

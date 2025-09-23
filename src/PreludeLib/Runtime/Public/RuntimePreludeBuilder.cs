@@ -1,16 +1,17 @@
 ﻿using System.Reflection;
 using HarmonyLib;
+using Microsoft.Extensions.Logging;
 using PreludeLib.Common;
 using PreludeLib.Runtime.Internal;
 using PreludeLib.Runtime.Registry;
 
 namespace PreludeLib.Runtime.Public;
 
-public class RuntimePreludeBuilder(RuntimePrelude owner, string id, IRuntimePatchRegistry registry)
+public class RuntimePreludeBuilder(RuntimePrelude owner, string id, IRuntimePatchRegistry registry, ILogger logger)
     : IRuntimeRegistryBuilder
 {
     private readonly RuntimePrelude _owner = owner;
-    private readonly RuntimeRegistryBuilder _builder = new(id, registry);
+    private readonly RuntimeRegistryBuilder _builder = new(id, registry, logger);
 
     public void ScanAndPatchAll()
         => _builder.ScanAndPatchAll();

@@ -1,6 +1,7 @@
 ﻿using System.Reflection;
 using System.Runtime.CompilerServices;
 using HarmonyLib;
+using Microsoft.Extensions.Logging;
 using PreludeLib.Common;
 using PreludeLib.Runtime.Public;
 using PreludeLib.Runtime.Registry;
@@ -79,7 +80,7 @@ public class RuntimeRegistryBuilder : IRuntimeRegistryBuilder
 
     public void ScanAndPatch(Type containerType)
     {
-        var builder = new RuntimeContainerTypeRegistryBuilder(this, containerType);
+        var builder = new RuntimeContainerTypeRegistryBuilder(this, containerType, _logger);
         builder.Patch();
     }
     
@@ -272,11 +273,14 @@ public class RuntimeRegistryBuilder : IRuntimeRegistryBuilder
     
     private readonly ConditionalWeakTable<Assembly, List<Type>> _allHarmonyPatchCache = new();
     private readonly ConditionalWeakTable<Assembly, Dictionary<Category, List<Type>>> _categoryPatchCache = new();
-    private readonly IRuntimePatchRegistry _registry;
 
-    public RuntimeRegistryBuilder(string id, IRuntimePatchRegistry registry)
+    private readonly IRuntimePatchRegistry _registry;
+    private readonly ILogger _logger;
+
+    public RuntimeRegistryBuilder(string id, IRuntimePatchRegistry registry, ILogger logger)
     {
         _registry = registry;
+        _logger = logger;
         Id = id;
         
         _registry.AddInstance(Id);
@@ -305,6 +309,7 @@ public class RuntimeRegistryBuilder : IRuntimeRegistryBuilder
         }
 
         _allHarmonyPatchCache.Add(patchAssembly, result);
+        _logger.LogDebug("Found {Count} patch container types in assembly {Assembly}", result.Count, patchAssembly.FullName);
         return result;
     }
     
@@ -315,27 +320,31 @@ public class RuntimeRegistryBuilder : IRuntimeRegistryBuilder
             d = [];
             _categoryPatchCache.Add(patchAssembly, d);
         }
-        if (!d.TryGetValue(category, out var result))
-        {
-            result = [];
-            d.Add(category, result);
-        }
+
+        if (d.TryGetValue(category, out var result))
+            return result;
+        
+        result = [];
+        d.Add(category, result);
         
         var allTypes = GetAllTypes(patchAssembly);
         result.AddRange(allTypes.Where(typeDef => GetCategory(typeDef) == category).ToList());
+        
+        _logger.LogDebug("Found {Count} patch container types in assembly {Assembly} for category {Category}", result.Count, patchAssembly.FullName, category);
         return result;
     }
 
     private IEnumerable<Assembly> GetAllPatchAssemblies()
     {
         var preludeAsm = typeof(RuntimePrelude).Assembly;
-        var preludeAsmName = preludeAsm.FullName;
+        var preludeAsmName = preludeAsm.GetName().Name;
         
         foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
         {
             if (asm.GetReferencedAssemblies().All(asmRef => asmRef.Name != preludeAsmName))
                 continue;
 
+            _logger.LogDebug("Found patch assembly: {Assembly}", asm.FullName);
             yield return asm;
         }
     }

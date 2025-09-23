@@ -1,5 +1,6 @@
 ﻿using HarmonyLib;
 using Mono.Cecil;
+using PreludeLib.Common;
 using PreludeLib.CompileTime.Public;
 using PreludeLib.CompileTime.Registry;
 
@@ -8,7 +9,7 @@ namespace PreludeLib.CompileTime.Internal;
 internal interface ICompileTimeRegistryBuilder
 {
     void ScanAndPatchAll(AssemblyDefinition patchAssemblyDef);
-    void ScanAndPatchCategory(AssemblyDefinition patchAssemblyDef, string? category);
+    void ScanAndPatchCategory(AssemblyDefinition patchAssemblyDef, Category category);
     void ScanAndPatchUncategorized(AssemblyDefinition patchAssemblyDef);
     void ScanAndPatch(TypeReference containerTypeRef);
     void ScanAndPatch(TypeDefinition containerTypeDef);

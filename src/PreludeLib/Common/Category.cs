@@ -1,6 +1,6 @@
 ﻿namespace PreludeLib.Common;
 
-public readonly struct Category(string name) : IEquatable<Category>
+public readonly struct Category(string? name) : IEquatable<Category>
 {
     public readonly string? Name = name;
 
@@ -12,6 +12,9 @@ public readonly struct Category(string name) : IEquatable<Category>
 
     public override int GetHashCode()
         => (Name != null ? Name.GetHashCode() : 0);
+
+    public override string ToString()
+        => Name ?? "<Uncategorized>";
     
     public static bool operator ==(Category left, Category right)
         => left.Name == right.Name;

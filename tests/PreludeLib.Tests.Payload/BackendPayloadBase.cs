@@ -28,7 +28,7 @@ public abstract class BackendPayloadBase(bool shouldPass, ILogger logger)
         => _backend ??= CreateBackend();
     
     private RuntimePrelude CreatePrelude()
-        => new(GetOrCreateBackend());
+        => new(GetOrCreateBackend(), Logger);
     
     protected RuntimePrelude GetOrCreatePrelude()
         => _prelude ??= CreatePrelude();

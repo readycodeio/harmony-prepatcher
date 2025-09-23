@@ -16,13 +16,19 @@ internal static class RuntimeBackendUtils
         }
         else if (target.TargetMethod != null)
         {
-            if (target.TargetMethod.ReturnType.IsArray)
-                return RunMethod<IEnumerable<MethodBase>?>(target.TargetMethod, context, null, null) ?? [];
-            else
+            if (typeof(MethodBase).IsAssignableFrom(target.TargetMethod.ReturnType))
             {
                 var result = RunMethod<MethodBase?>(target.TargetMethod, context, null, null,
                     m => m is null ? "null" : (string?)null);
                 return result != null ? [result] : [];
+            }
+            else if (typeof(IEnumerable<MethodBase>).IsAssignableFrom(target.TargetMethod.ReturnType))
+            {
+                return RunMethod<IEnumerable<MethodBase>?>(target.TargetMethod, context, null, null) ?? [];
+            }
+            else
+            {
+                throw new Exception($"Target method {target.TargetMethod.FullDescription()} has wrong return type (should be MethodBase or IEnumerable<MethodBase>)");
             }
         }
         else
