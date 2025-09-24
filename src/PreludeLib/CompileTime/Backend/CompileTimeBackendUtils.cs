@@ -1,4 +1,5 @@
-﻿using Mono.Cecil;
+﻿using Microsoft.Extensions.Logging;
+using Mono.Cecil;
 using Mono.Cecil.Rocks;
 using PreludeLib.Attributes;
 using PreludeLib.CompileTime.Registry;
@@ -30,93 +31,126 @@ internal static class CompileTimeBackendUtils
             return typeRef;
         }
     }
-    
+
     public static IEnumerable<MethodDefinition> GetTargetOriginals(CompileTimePatchTarget target, CompileTimeAuxiliaryMethodContext context)
     {
+        TypeReference? FindTypeByName(string typeFullName)
+        {
+            var asmResolver = target.Group.ContainerTypeDef!.Module.AssemblyResolver;
+            var typeInCurrentModule = target.Group.ContainerTypeDef!.Module.GetType(typeFullName);
+            if (typeInCurrentModule != null)
+                return typeInCurrentModule;
+
+            foreach (var asmRef in target.Group.ContainerTypeDef!.Module.AssemblyReferences)
+            {
+                var asmDef = asmResolver.Resolve(asmRef);
+                foreach (var module in asmDef.Modules)
+                {
+                    var foundType = module.GetType(typeFullName);
+                    if (foundType != null)
+                        return foundType;
+                }
+            }
+
+            context.Logger.Log(LogLevel.Error, "Could not find type by name: {TypeName}", typeFullName);
+            return null;
+        }
+
         if (target.OriginalMethodDef != null)
         {
             return [target.OriginalMethodDef];
         }
-        else if (target.TargetMethodDef != null)
+
+        if (target.TargetMethodDef == null)
         {
-            var originals = target.TargetMethodDef.CustomAttributes.Where(x =>
-                    x.Constructor.DeclaringType.FullName == typeof(HarmonyTargetMethodHint).FullName)
-                .Select(x =>
+            context.Logger.Log(LogLevel.Error, "Target method definition is null for target in group {GroupName}", target.Group.ContainerTypeDef.FullDescription());
+            return [];
+        }
+
+        var originals = target.TargetMethodDef.CustomAttributes
+            .Where(x => x.Constructor.DeclaringType.FullName == typeof(HarmonyTargetMethodHint).FullName)
+            .Select(x =>
+            {
+                TypeReference? declaringType = null;
+                string? methodName;
+                TypeReference[] methodParams = [];
+
+                if (x.ConstructorArguments.Count == 3)
                 {
-                    TypeReference? declaringType = null;
-                    string? methodName;
-                    TypeReference[] methodParams;
+                    context.Logger.Log(LogLevel.Debug, "Processing HarmonyTargetMethodHint with 3 arguments on method {Method} in group {GroupName}", target.TargetMethodDef.FullDescription(), target.Group.ContainerTypeDef.FullDescription());
 
-                    if (x.ConstructorArguments.Count == 3)
+                    if (x.ConstructorArguments[0].Type.FullName == typeof(Type).FullName)
                     {
-                        if (x.ConstructorArguments[0].Type.FullName == typeof(Type).FullName)
-                        {
-                            declaringType = (TypeReference)x.ConstructorArguments[0].Value;
-                        }
-                        else
-                        {
-                            var declaringTypeStr = x.ConstructorArguments[0].Value as string;
-                            var asmResolver = target.Group.ContainerTypeDef!.Module.AssemblyResolver;
-                            foreach (var asmRef in target.Group.ContainerTypeDef!.Module.AssemblyReferences)
-                            {
-                                var asmDef = asmResolver.Resolve(asmRef);
-                                foreach (var module in asmDef.Modules)
-                                {
-                                    declaringType = module.GetType(declaringTypeStr);
-                                    if (declaringType != null)
-                                        break;
-                                }
-                                if (declaringType != null)
-                                    break;
-                            }
-                        }
-                        
-                        methodName = x.ConstructorArguments[1].Value as string;
-                        var args = x.ConstructorArguments[2].Value as CustomAttributeArgument[];
-                        methodParams = args?.Select(a => (TypeReference)a.Value).ToArray() ?? [];
-
-                    }
-                    else if (x.ConstructorArguments.Count == 2)
-                    {
-                        declaringType = target.OriginalMethodsDeclaringTypeDef;
-                        methodName = x.ConstructorArguments[0].Value as string;
-                        var args = x.ConstructorArguments[1].Value as CustomAttributeArgument[];
-                        methodParams = args?.Select(a => (TypeReference)a.Value).ToArray() ?? [];
+                        // Constructor: (Type declaringType, string methodName, params Type[] args)
+                        declaringType = (TypeReference)x.ConstructorArguments[0].Value;
                     }
                     else
                     {
-                        return null;
-                    }
-                    
-                    
-                    for (var i = 0; i < methodParams.Length; i++)
-                    {
-                        methodParams[i] = FixRefInOut(methodParams[i]);
+                        // Constructor: (string declaringType, string methodName, params Type[] args)
+                        if (x.ConstructorArguments[0].Value is string declaringTypeStr)
+                            declaringType = FindTypeByName(declaringTypeStr);
                     }
 
-                    return declaringType?.Resolve().Methods.FirstOrDefault(m =>
+                    methodName = x.ConstructorArguments[1].Value as string;
+                    var args = x.ConstructorArguments[2].Value as CustomAttributeArgument[];
+                    methodParams = args?.Select(a => (TypeReference)a.Value).ToArray() ?? [];
+                }
+                else
+                {
+                    context.Logger.Log(LogLevel.Error, "Invalid number of arguments in HarmonyTargetMethodHint attribute on method {Method} in group {GroupName}", target.TargetMethodDef.FullDescription(), target.Group.ContainerTypeDef.FullDescription());
+                    return null;
+                }
+
+                if (declaringType == null || methodName == null)
+                {
+                    context.Logger.Log(LogLevel.Error, "Could not resolve declaring type or method name in HarmonyTargetMethodHint attribute on method {Method} in group {GroupName}", target.TargetMethodDef.FullDescription(), target.Group.ContainerTypeDef.FullDescription());
+                    return null;
+                }
+
+
+                for (var i = 0; i < methodParams.Length; i++)
+                {
+                    methodParams[i] = FixRefInOut(methodParams[i]);
+                }
+
+                var overloads = declaringType.Resolve().Methods
+                    .Where(m =>
                     {
                         if (m.Name != methodName)
-                            return false;
-                        if (m.Parameters.Count != methodParams.Length)
-                            return false;
-                        for (var i = 0; i < m.Parameters.Count; i++)
                         {
-                            var param = m.Parameters[i];
-                            var methodParam = methodParams[i];
-                            if (param.ParameterType.FullName != methodParam.FullName)
-                                return false;
+                            context.Logger.Log(LogLevel.Debug, "Method name mismatch: expected {Expected}, found {Found} intype {Type}", methodName, m.Name, declaringType.FullDescription());
+                            return false;
                         }
 
                         return true;
-                    });
-                });
+                    })
+                    .ToArray();
 
-            return originals.Where(m => m != null)!;
-        }
-        else
-        {
-            return [];
-        }
+                if (overloads.Length == 1)
+                    return overloads[0];
+
+                // when there are multiple overloads, we need to match the parameters
+                return overloads.FirstOrDefault(m =>
+                {
+                    if (m.Parameters.Count != methodParams.Length)
+                    {
+                        context.Logger.Log(LogLevel.Debug, "Parameter count mismatch in method {Method} in type {Type}: expected {Expected}, found{Found}", methodName, declaringType.FullDescription(), methodParams.Length, m.Parameters.Count);
+                        return false;
+                    }
+
+                    for (var i = 0; i < m.Parameters.Count; i++)
+                    {
+                        if (m.Parameters[i].ParameterType.FullName != methodParams[i].FullName)
+                        {
+                            context.Logger.Log(LogLevel.Debug, "Parameter type mismatch in method {Method} in type {Type} at position {Position}:expected {Expected}, found {Found}", methodName, declaringType.FullDescription(), i, methodParams[i].FullName, m.Parameters[i].ParameterType.FullName);
+                            return false;
+                        }
+                    }
+
+                    return true;
+                });
+            });
+
+        return originals.Where(m => m != null)!;
     }
 }
