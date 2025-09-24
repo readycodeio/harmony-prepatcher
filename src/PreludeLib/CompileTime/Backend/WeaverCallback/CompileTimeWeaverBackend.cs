@@ -97,7 +97,10 @@ public class CompileTimeWeaverBackend(ILogger logger) : CompileTimeBackendBase(l
             moduleDef.ImportReference(patchDef.ReturnType)
         );
         delInvoke.ImplAttributes = MethodImplAttributes.Runtime | MethodImplAttributes.Managed;
-        foreach (var param in patchDef.Parameters.Select(x => new ParameterDefinition(x.Name, x.Attributes, moduleDef.ImportReference(x.ParameterType))))
+        foreach (var param in patchDef.Parameters.Select(x => new ParameterDefinition(x.Name, x.Attributes, moduleDef.ImportReference(x.ParameterType))
+                 {
+                     Constant = x.Constant
+                 }))
         {
             delInvoke.Parameters.Add(param);
         }
@@ -548,26 +551,26 @@ public class CompileTimeWeaverBackend(ILogger logger) : CompileTimeBackendBase(l
             return false;
         return list.SkipLast(1).All(code => code.OpCode != OpCodes.Ret);
     }
-    
+
     private void CleanupCodes(CecilFlowHelper inOutFlow, List<CecilLabel> outEndLabels)
     {
-	    foreach (var instr in inOutFlow.Instructions.ToList())
-	    {
-		    var code = instr.OpCode;
-		    if (code == OpCodes.Ret)
-		    {
-			    var endLabel = inOutFlow.DefineLabel();
-			    var br = Instruction.Create(OpCodes.Br, endLabel.Instruction);
-			    inOutFlow.Replace(instr, br);
-			    outEndLabels.Add(endLabel);
-		    }
-		    else if (_shortJumps.TryGetValue(code, out var longJump))
-		    {
-			    var newInstr = instr.GetPrototype();
-			    newInstr.OpCode = longJump;
-			    inOutFlow.Replace(instr, newInstr);
-		    }
-	    }
+        foreach (var instr in inOutFlow.Instructions.ToList())
+        {
+            var code = instr.OpCode;
+            if (code == OpCodes.Ret)
+            {
+                var endLabel = inOutFlow.DefineLabel();
+                var br = Instruction.Create(OpCodes.Br, endLabel.Instruction);
+                inOutFlow.Replace(instr, br);
+                outEndLabels.Add(endLabel);
+            }
+            else if (_shortJumps.TryGetValue(code, out var longJump))
+            {
+                var newInstr = instr.GetPrototype();
+                newInstr.OpCode = longJump;
+                inOutFlow.Replace(instr, newInstr);
+            }
+        }
     }
 
     #endregion
