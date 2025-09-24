@@ -300,10 +300,7 @@ public class CompileTimeWeaverBackend(ILogger logger) : CompileTimeBackendBase(l
 
         fixes.ForEach(fix =>
         {
-            var declaringType = fix.DeclaringType;
-            if (declaringType is null)
-                return;
-            var varName = $"state__{declaringType.FullName}";
+            var varName = $"__state_{original.MethodDef.Name}"; // TODO: This will fail if there are multiple patches on the same method that use state
             _ = original.OtherLocals.TryGetValue(varName, out var maybeLocal);
             foreach (var injection in InjectionsFor(original, fix, InjectionType.State))
             {
@@ -1497,10 +1494,16 @@ public class CompileTimeWeaverBackend(ILogger logger) : CompileTimeBackendBase(l
             if (injectionType == InjectionType.State)
             {
                 var ldlocCode = paramType.IsByReference ? OpCodes.Ldloca : OpCodes.Ldloc;
-                if (original.OtherLocals.TryGetValue($"state__{patch.DeclaringType?.FullName ?? "null"}", out var stateVar))
+                var stateVarName = $"__state_{original.MethodDef.Name}"; // TODO: This will fail if there are multiple patches on the same method that use state
+
+                if (original.OtherLocals.TryGetValue(stateVarName, out var stateVar))
                     result.Add(Instruction.Create(ldlocCode, stateVar));
                 else
+                {
+                    logger.LogError($"State variable '{stateVarName}' not found in locals for patched method '{patch.MethodName}'");
                     result.Add(Instruction.Create(OpCodes.Ldnull));
+                }
+
                 continue;
             }
 

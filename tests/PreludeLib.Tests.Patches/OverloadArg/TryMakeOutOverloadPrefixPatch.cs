@@ -11,11 +11,11 @@ namespace PreludeLib.Tests.Patches.OverloadArg;
 [HarmonyPatch(typeof(OverloadArgTargets))]
 public static class TryMakeOutOverloadPrefixPatch
 {
-    [HarmonyTargetMethodHint(nameof(OverloadArgTargets.TryMake), [typeof(Out<int>)])]
+    [HarmonyTargetMethodHint(nameof(OverloadArgTargets.TryMake), typeof(Out<int>))]
     static MethodBase TargetMethod()
         => AccessTools.Method(typeof(OverloadArgTargets),
             nameof(OverloadArgTargets.TryMake),
-            new[] { typeof(int).MakeByRefType() }); // 'out int' is ByRef
+            [typeof(int).MakeByRefType()]); // 'out int' is ByRef
 
     [HarmonyPrefix]
     public static bool TryMakeOut_Prefix(ref int value, ref bool __result)

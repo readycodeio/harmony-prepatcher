@@ -15,21 +15,16 @@ internal static class CompileTimeBackendUtils
         {
             var elemTypeRef = typeRef.GetElementType();
 
-            if (elemTypeRef.FullName == typeof(Ref<>).FullName || elemTypeRef.FullName == typeof(In<>).FullName ||
+            if (elemTypeRef.FullName == typeof(Ref<>).FullName ||
+                elemTypeRef.FullName == typeof(In<>).FullName ||
                 elemTypeRef.FullName == typeof(Out<>).FullName)
             {
                 var arg = instTypeRef.GenericArguments[0];
                 return arg.MakeByReferenceType();
             }
-            else
-            {
-                return typeRef;
-            }
         }
-        else
-        {
-            return typeRef;
-        }
+
+        return typeRef;
     }
 
     public static IEnumerable<MethodDefinition> GetTargetOriginals(CompileTimePatchTarget target, CompileTimeAuxiliaryMethodContext context)
@@ -124,6 +119,13 @@ internal static class CompileTimeBackendUtils
 
                     methodName = x.ConstructorArguments[1].Value as string;
                     var args = x.ConstructorArguments[2].Value as CustomAttributeArgument[];
+                    methodParams = args?.Select(a => (TypeReference)a.Value).ToArray() ?? [];
+                }
+                else if (x.ConstructorArguments.Count == 2)
+                {
+                    declaringType = target.OriginalMethodsDeclaringTypeDef;
+                    methodName = x.ConstructorArguments[0].Value as string;
+                    var args = x.ConstructorArguments[1].Value as CustomAttributeArgument[];
                     methodParams = args?.Select(a => (TypeReference)a.Value).ToArray() ?? [];
                 }
                 else
