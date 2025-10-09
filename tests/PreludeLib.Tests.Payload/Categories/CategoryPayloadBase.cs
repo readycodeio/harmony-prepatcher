@@ -1,7 +1,9 @@
 ﻿using Microsoft.Extensions.Logging;
+using PreludeLib.Common;
 using PreludeLib.Tests.Examples;
 using PreludeLib.Tests.Patches.Categories;
 using Xunit;
+using Xunit.Sdk;
 
 namespace PreludeLib.Tests.Payload.Categories;
 
@@ -54,6 +56,41 @@ public abstract class CategoryPayloadBase(bool shouldPass, ILogger logger) : Bac
             // - alpha/beta NOT applied here
             int result = t.Op(7);
             Assert.Equal(7 + 10, result);
+        }
+        finally
+        {
+            builder.UnpatchAll();
+            owner.Commit();
+        }
+    }
+
+    public void PatchWithoutHarmonyPatchWorks()
+    {
+        var id = GenerateId(nameof(PatchWithoutHarmonyPatchWorks));
+        var builder = CreateBuilder(id);
+        var owner = GetOrCreatePrelude();
+
+        var t = new OtherCategoryTargets();
+
+        Assert.Throws<InvalidOperationException>(() => t.OtherMethod(7));
+        
+        builder.ScanAndPatchCategory(typeof(CategoryHelper).Assembly, new Category("noHarmonyPatch"));
+        owner.Commit();
+
+        try
+        {
+            int result = -1;
+            try
+            {
+                Logger.LogInformation("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+                result = t.OtherMethod(7);
+            }
+            catch (System.Exception ex)
+            {
+                throw new XunitException("Should not throw", ex);
+            }
+            
+            Assert.Equal(7 * 7, result);
         }
         finally
         {

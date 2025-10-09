@@ -12,4 +12,8 @@ public abstract class CategoryTestsBase(ITestOutputHelper output, ITestPreproces
     [Fact]
     public void PatchAllUncategorizedAppliesOnlyUncategorizedPatches()
         => RunTestIsolated(nameof(PatchAllUncategorizedAppliesOnlyUncategorizedPatches));
+    
+    [Fact]
+    public void PatchWithoutHarmonyPatchWorks()
+        => RunTestIsolated(nameof(PatchWithoutHarmonyPatchWorks));
 }
