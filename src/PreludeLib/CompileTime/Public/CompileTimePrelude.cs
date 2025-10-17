@@ -20,7 +20,7 @@ public class CompileTimePrelude : ICompileTimeRegistryBuilder
     {
         _backend = backend;
 
-        _registry = new CompileTimePatchRegistry();
+        _registry = new CompileTimePatchRegistry(logger);
         _builder = new CompileTimeRegistryBuilder(_registry, logger);
     }
 
