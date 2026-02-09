@@ -28,37 +28,37 @@ public class RuntimeHarmonyBackend(ILogger logger) : RuntimePerIdPatchBackendBas
         
         foreach (var patchMethod in removedPrefixes)
         {
-            Logger.LogInformation("Unpatching {Original} prefix {Prefix}", original.FullDescription(), patchMethod.method.FullDescription());
+            Logger.LogDebug("Unpatching {Original} prefix {Prefix}", original.FullDescription(), patchMethod.method.FullDescription());
             harmony.Unpatch(original, patchMethod.method);
         }
 
         foreach (var patchMethod in removedPostfixes)
         {
-            Logger.LogInformation("Unpatching {Original} postfix {Postfix}", original.FullDescription(), patchMethod.method.FullDescription());
+            Logger.LogDebug("Unpatching {Original} postfix {Postfix}", original.FullDescription(), patchMethod.method.FullDescription());
             harmony.Unpatch(original, patchMethod.method);
         }
 
         foreach (var patchMethod in removedFinalizers)
         {
-            Logger.LogInformation("Unpatching {Original} finalizer {Finalizer}", original.FullDescription(), patchMethod.method.FullDescription());
+            Logger.LogDebug("Unpatching {Original} finalizer {Finalizer}", original.FullDescription(), patchMethod.method.FullDescription());
             harmony.Unpatch(original, patchMethod.method);
         }
         
         foreach (var patchMethod in addedPrefixes)
         {
-            Logger.LogInformation("Patching {Original} prefix {Prefix}", original.FullDescription(), patchMethod.method.FullDescription());
+            Logger.LogDebug("Patching {Original} prefix {Prefix}", original.FullDescription(), patchMethod.method.FullDescription());
             harmony.Patch(original, prefix: patchMethod);
         }
 
         foreach (var patchMethod in addedPostfixes)
         {
-            Logger.LogInformation("Patching {Original} postfix {Postfix}", original.FullDescription(), patchMethod.method.FullDescription());
+            Logger.LogDebug("Patching {Original} postfix {Postfix}", original.FullDescription(), patchMethod.method.FullDescription());
             harmony.Patch(original, postfix: patchMethod); 
         }
 
         foreach (var patchMethod in addedFinalizers)
         {
-            Logger.LogInformation("Patching {Original} finalizer {Finalizer}", original.FullDescription(), patchMethod.method.FullDescription());
+            Logger.LogDebug("Patching {Original} finalizer {Finalizer}", original.FullDescription(), patchMethod.method.FullDescription());
             harmony.Patch(original, finalizer: patchMethod);
         }
     }
