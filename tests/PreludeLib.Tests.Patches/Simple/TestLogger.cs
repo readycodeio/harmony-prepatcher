@@ -20,7 +20,7 @@ public class TestLogger : ILogger
     // ---- ILogger implementation ----
     public IDisposable BeginScope<TState>(TState state) => NullScope.Instance;
 
-    public bool IsEnabled(LogLevel logLevel) => logLevel >= MinLevel;
+    public bool IsEnabled(LogLevel logLevel) => logLevel >= MinLevel && logLevel < LogLevel.None;
 
     public void Log<TState>(
         LogLevel logLevel,

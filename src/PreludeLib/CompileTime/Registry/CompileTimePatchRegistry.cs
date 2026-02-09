@@ -1,11 +1,12 @@
 ﻿using HarmonyLib;
+using Microsoft.Extensions.Logging;
 using PreludeLib.Common;
 using PreludeLib.CompileTime.Public;
 using PreludeLib.CompileTime.Utils;
 
 namespace PreludeLib.CompileTime.Registry;
 
-public class CompileTimePatchRegistry : ICompileTimePatchRegistry
+public class CompileTimePatchRegistry(ILogger logger) : ICompileTimePatchRegistry
 {
     private struct GroupEntry(CompileTimePatchGroup group)
     {
@@ -234,9 +235,12 @@ public class CompileTimePatchRegistry : ICompileTimePatchRegistry
                 break;
             }
         }
-        
+
         if (found)
-            throw new ArgumentException($"Patch method already registered: {patchEntry.PatchInfo.Method.FullDescription()}");
+        {
+            logger.LogDebug("Patch method already registered: {Method}", patchEntry.PatchInfo.Method.FullDescription());
+            return;
+        }
 
         patches.Add(patchEntry);
         addedPatches.Add(patchEntry);
