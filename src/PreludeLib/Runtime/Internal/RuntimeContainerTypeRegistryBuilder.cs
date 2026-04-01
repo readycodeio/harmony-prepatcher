@@ -54,23 +54,27 @@ internal readonly struct RuntimeContainerTypeRegistryBuilder
                 job = new Job() { target = target };
                 _state[target] = job;
             }
+
             return job;
         }
 
         internal List<Job> GetJobs()
         {
-            return [.. _state.Values.Where(job =>
-                job.prefixes.Count +
-                job.postfixes.Count +
-                job.transpilers.Count +
-                job.finalizers.Count +
-                job.innerprefixes.Count +
-                job.innerpostfixes.Count
-                > 0
-            )];
+            return
+            [
+                .. _state.Values.Where(job =>
+                    job.prefixes.Count +
+                    job.postfixes.Count +
+                    job.transpilers.Count +
+                    job.finalizers.Count +
+                    job.innerprefixes.Count +
+                    job.innerpostfixes.Count
+                    > 0
+                )
+            ];
         }
     }
-    
+
     private static readonly List<Type> _auxiliaryTypes =
     [
         typeof(HarmonyPrepare),
@@ -78,11 +82,11 @@ internal readonly struct RuntimeContainerTypeRegistryBuilder
         typeof(HarmonyTargetMethod),
         typeof(HarmonyTargetMethods)
     ];
-    
+
     private readonly RuntimeRegistryBuilder _owner;
     private readonly Type _containerType;
     private readonly ILogger _logger;
-    
+
     private readonly HarmonyMethod _containerAttributes;
     private readonly Dictionary<Type, MethodInfo> _auxiliaryMethods;
     private readonly List<AttributePatch> _patchMethods;
@@ -92,7 +96,7 @@ internal readonly struct RuntimeContainerTypeRegistryBuilder
         _owner = owner;
         _containerType = type;
         _logger = logger;
-        
+
         var harmonyAttributes = HarmonyMethodExtensions.GetFromType(type);
         _containerAttributes = HarmonyMethod.Merge(harmonyAttributes);
         _containerAttributes.methodType ??= MethodType.Normal;
@@ -116,7 +120,7 @@ internal readonly struct RuntimeContainerTypeRegistryBuilder
 
     private PatchGroup GetPatchGroup()
         => new(_containerType);
-    
+
     public void Patch()
     {
         // NOTE: Skipped `HarmonyPrepare` feature
@@ -129,10 +133,10 @@ internal readonly struct RuntimeContainerTypeRegistryBuilder
             return [];
         }
         */
-        
+
         PatchTarget? lastTarget = null;
         var targets = GetBulkMethods();
-        
+
         if (targets.Count == 1)
             lastTarget = targets[0];
         // NOTE: Skipping reverse patch feature
@@ -147,9 +151,11 @@ internal readonly struct RuntimeContainerTypeRegistryBuilder
         // RunMethod<HarmonyCleanup>(ref exception, exception);
         // ReportException(exception, lastOriginal);
     }
-    
+
     private void BulkPatch(List<PatchTarget> targets, ref PatchTarget? lastTarget)
     {
+        _logger.LogDebug("Patching with bulk methods for patch container {ContainerType} ({Count} target methods)", _containerType.FullDescription(), targets.Count);
+
         var jobs = new PatchJobs();
         for (var i = 0; i < targets.Count; i++)
         {
@@ -169,19 +175,23 @@ internal readonly struct RuntimeContainerTypeRegistryBuilder
                 job.AddPatch(patchMethod);
             }
         }
+
         foreach (var job in jobs.GetJobs())
         {
             lastTarget = job.target;
             ProcessPatchJob(job);
         }
     }
-    
+
     private void PatchWithAttributes(ref PatchTarget? lastTarget)
     {
         if (_patchMethods.Count == 0)
-            _logger.LogError("Patching with attributes for patch container {ContainerType} (NO PATCHES)", _containerType.FullDescription());
-        else
-            _logger.LogDebug("Patching with attributes for patch container {ContainerType} ({Count} patch methods)", _containerType.FullDescription(), _patchMethods.Count);
+        {
+            _logger.LogError("No patches for patch container {ContainerType}", _containerType.FullDescription());
+            return;
+        }
+
+        _logger.LogDebug("Patching with attributes for patch container {ContainerType} ({Count} patch methods)", _containerType.FullDescription(), _patchMethods.Count);
 
         var jobs = new PatchJobs();
         foreach (var patchMethod in _patchMethods)
@@ -193,13 +203,14 @@ internal readonly struct RuntimeContainerTypeRegistryBuilder
             var job = jobs.GetJob(lastTarget.Value);
             job.AddPatch(patchMethod);
         }
+
         foreach (var job in jobs.GetJobs())
         {
             lastTarget = job.target;
             ProcessPatchJob(job);
         }
     }
-    
+
     private void ProcessPatchJob(PatchJobs.Job job)
     {
         // NOTE: Skipped `HarmonyPrepare` feature
@@ -209,24 +220,27 @@ internal readonly struct RuntimeContainerTypeRegistryBuilder
         {
             _owner.Patch(job.target, prefix: prefix);
         }
+
         foreach (var postfix in job.postfixes)
         {
             _owner.Patch(job.target, postfix: postfix);
         }
+
         foreach (var transpiler in job.transpilers)
         {
             _owner.Patch(job.target, transpiler: transpiler);
         }
+
         foreach (var finalizer in job.finalizers)
         {
             _owner.Patch(job.target, finalizer: finalizer);
         }
-        
+
         if (job.innerprefixes.Count > 0)
             throw new NotImplementedException("InnerPrefix is not implemented");
         if (job.innerpostfixes.Count > 0)
             throw new NotImplementedException("InnerPostfix is not implemented");
-        
+
         // RunMethod<HarmonyCleanup>(ref exception, job.original, exception);
         // ReportException(exception, job.original);
     }
@@ -234,7 +248,7 @@ internal readonly struct RuntimeContainerTypeRegistryBuilder
     private List<PatchTarget> GetBulkMethods()
     {
         _logger.LogDebug("Getting bulk methods for patch container {ContainerType}", _containerType.FullDescription());
-        
+
         var isPatchAll = _containerType.GetCustomAttributes(true).Any(a => a.GetType().FullName == PatchTools.harmonyPatchAllFullName);
         if (isPatchAll)
         {

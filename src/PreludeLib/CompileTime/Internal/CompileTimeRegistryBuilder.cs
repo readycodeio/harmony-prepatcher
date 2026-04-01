@@ -19,7 +19,7 @@ internal class CompileTimeRegistryBuilder(ICompileTimePatchRegistry registry, IL
             ScanAndPatch(typeDef);
         }
     }
-    
+
     public void ScanAndPatchCategory(AssemblyDefinition patchAssemblyDef, Category category)
     {
         foreach (var typeDef in GetMatchingTypeDefs(patchAssemblyDef, category))
@@ -63,11 +63,9 @@ internal class CompileTimeRegistryBuilder(ICompileTimePatchRegistry registry, IL
         else
             PatchWithAttributes(containerTypeDef);
     }
-    
+
     private List<CompileTimePatchTarget> GetBulkMethods(TypeDefinition containerTypeDef)
     {
-        logger.LogDebug("Getting bulk methods for patch container {ContainerType}", containerTypeDef.FullDescription());
-
         var harmonyAttributes = CompileTimePreludeMethodUtils.GetFromTypeDef(containerTypeDef);
         var containerAttributes = CompileTimePreludeMethod.Merge(harmonyAttributes);
         containerAttributes.MethodType ??= MethodType.Normal;
@@ -92,7 +90,7 @@ internal class CompileTimeRegistryBuilder(ICompileTimePatchRegistry registry, IL
         var harmonyTargetListMethod = CompileTimePatchTools.GetPatchMethod(containerTypeDef, typeof(HarmonyTargetMethods).FullName!);
         if (harmonyTargetListMethod != null)
         {
-            var declaringType =  containerAttributes.DeclaringType?.Resolve();
+            var declaringType = containerAttributes.DeclaringType?.Resolve();
             return [CompileTimePatchTarget.FromTargetMethod(harmonyTargetListMethod, declaringType, group)];
         }
 
@@ -120,7 +118,7 @@ internal class CompileTimeRegistryBuilder(ICompileTimePatchRegistry registry, IL
         var harmonyTargetMethod = CompileTimePatchTools.GetPatchMethod(containerTypeDef, typeof(HarmonyTargetMethod).FullName!);
         if (harmonyTargetMethod != null)
         {
-            var declaringType =  containerAttributes.DeclaringType?.Resolve();
+            var declaringType = containerAttributes.DeclaringType?.Resolve();
             return [CompileTimePatchTarget.FromTargetMethod(harmonyTargetMethod, declaringType, group)];
         }
 
@@ -130,7 +128,6 @@ internal class CompileTimeRegistryBuilder(ICompileTimePatchRegistry registry, IL
             result.Add(targetMethod);
         */
 
-        logger.LogDebug("No target method found for patch container {ContainerType}", containerTypeDef.FullName);
         return [];
     }
 
@@ -139,7 +136,7 @@ internal class CompileTimeRegistryBuilder(ICompileTimePatchRegistry registry, IL
         var harmonyAttributes = CompileTimePreludeMethodUtils.GetFromTypeDef(containerTypeDef);
         var containerAttributes = CompileTimePreludeMethod.Merge(harmonyAttributes);
         containerAttributes.MethodType ??= MethodType.Normal;
-        
+
         List<CompileTimeAttributePatch> patchMethods = CompileTimePatchTools.GetPatchMethods(containerTypeDef);
         foreach (var patchMethod in patchMethods)
         {
@@ -150,9 +147,10 @@ internal class CompileTimeRegistryBuilder(ICompileTimePatchRegistry registry, IL
 
         return patchMethods;
     }
-    
+
     private void BulkPatch(TypeDefinition containerTypeDef, List<CompileTimePatchTarget> targets)
     {
+        logger.LogDebug("Bulk patching for patch container {ContainerType} ({Count} targets)", containerTypeDef.FullDescription(), targets.Count);
         var patchMethods = GetPatchMethods(containerTypeDef);
 
         var methodsList = CompileTimePreludeMethodUtils.GetFromTypeDef(containerTypeDef);
@@ -168,19 +166,21 @@ internal class CompileTimeRegistryBuilder(ICompileTimePatchRegistry registry, IL
             }
         }
     }
-    
+
     private void PatchWithAttributes(TypeDefinition containerTypeDef)
     {
         var patchMethods = GetPatchMethods(containerTypeDef);
 
         if (patchMethods.Count == 0)
-            logger.LogError("Patching with attributes for patch container {ContainerType} (NO PATCHES)", containerTypeDef.FullDescription());
-        else
-            logger.LogDebug("Patching with attributes for patch container {ContainerType} ({Count} patch methods)", containerTypeDef.FullDescription(), patchMethods.Count);
+        {
+            logger.LogError("No patches for patch container {ContainerType}", containerTypeDef.FullDescription());
+            return;
+        }
 
         var group = new CompileTimePatchGroup(containerTypeDef);
         foreach (var patchMethod in patchMethods)
         {
+            logger.LogDebug("Patching method {PatchMethod} in container {ContainerType} [category: {Category}]", patchMethod.Info.Method.FullDescription(), containerTypeDef.FullDescription(), patchMethod.Info.Category);
             var methodRef = patchMethod.Info.GetOriginalMethod();
             var lastTarget = CompileTimePatchTarget.FromOriginal(methodRef!.Resolve(), group);
             if (lastTarget.OriginalMethodDef is null)
@@ -189,7 +189,7 @@ internal class CompileTimeRegistryBuilder(ICompileTimePatchRegistry registry, IL
             Patch(lastTarget, patchMethod);
         }
     }
-    
+
     public void Patch(
         CompileTimePatchTarget target,
         CompileTimePreludeMethod? prefix = null,
@@ -208,7 +208,7 @@ internal class CompileTimeRegistryBuilder(ICompileTimePatchRegistry registry, IL
             throw new NotSupportedException("Transpilers are not supported.");
         // processor.AddInfix(infix);
     }
-    
+
     public void Patch(CompileTimePatchTarget target, CompileTimeAttributePatch patch)
     {
         Patch(target, patch.PatchType, patch.Info);
@@ -229,7 +229,7 @@ internal class CompileTimeRegistryBuilder(ICompileTimePatchRegistry registry, IL
 
     public void PatchFinalizer(CompileTimePatchTarget target, CompileTimePreludeMethod finalizer)
         => Patch(target, HarmonyPatchType.Finalizer, finalizer);
-    
+
     // ---
 
     private readonly Dictionary<AssemblyDefinition, List<TypeDefinition>> _allHarmonyPatchCache = new();
@@ -238,7 +238,7 @@ internal class CompileTimeRegistryBuilder(ICompileTimePatchRegistry registry, IL
     private static Category GetCategory(TypeDefinition typeDef)
     {
         var harmonyAttributes = CompileTimePreludeMethodUtils.GetFromTypeDef(typeDef);
-        if (harmonyAttributes.Count == 0) 
+        if (harmonyAttributes.Count == 0)
             return Category.Uncategorized;
         var containerAttributes = CompileTimePreludeMethod.Merge(harmonyAttributes);
         return new Category(containerAttributes.Category);
@@ -248,7 +248,7 @@ internal class CompileTimeRegistryBuilder(ICompileTimePatchRegistry registry, IL
     {
         if (_allHarmonyPatchCache.TryGetValue(patchAssemblyDef, out var result))
             return result;
-        
+
         result = [];
         foreach (var typeDef in CompileTimePreludeCecilUtils.GetTypesFromAssemblyDef(patchAssemblyDef))
         {
@@ -261,7 +261,7 @@ internal class CompileTimeRegistryBuilder(ICompileTimePatchRegistry registry, IL
         logger.LogDebug("Found {Count} patch container types in assembly {Assembly}", result.Count, patchAssemblyDef.FullName);
         return result;
     }
-    
+
     private List<TypeDefinition> GetMatchingTypeDefs(AssemblyDefinition patchAssemblyDef, Category category)
     {
         if (!_categoryPatchCache.TryGetValue(patchAssemblyDef, out var d))
@@ -275,10 +275,10 @@ internal class CompileTimeRegistryBuilder(ICompileTimePatchRegistry registry, IL
 
         result = [];
         d.Add(category, result);
-        
+
         var allTypes = GetAllTypeDefs(patchAssemblyDef);
         result.AddRange(allTypes.Where(typeDef => GetCategory(typeDef) == category).ToList());
-        
+
         logger.LogDebug("Found {Count} patch container types in assembly {Assembly} for category {Category}", result.Count, patchAssemblyDef.FullName, category);
         return result;
     }
