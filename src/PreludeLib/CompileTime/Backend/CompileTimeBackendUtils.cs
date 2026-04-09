@@ -42,7 +42,7 @@ internal static class CompileTimeBackendUtils
 
                 foreach (var asmRef in target.Group.ContainerTypeDef!.Module.AssemblyReferences)
                 {
-                    var asmDef = asmResolver.Resolve(asmRef);
+                    using var asmDef = asmResolver.Resolve(asmRef);
                     foreach (var module in asmDef.Modules)
                     {
                         var foundType = module.GetType(name);

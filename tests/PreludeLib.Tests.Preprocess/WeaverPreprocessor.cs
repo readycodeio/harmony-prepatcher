@@ -29,7 +29,7 @@ public class WeaverPreprocessor(ILogger logger) : ITestPreprocessor
         var targetSymbolsFileName = Path.ChangeExtension(targetFileNameBase, "pdb");
         var hasSymbols = File.Exists(targetSymbolsFileName);
 
-        var targetAsmDef = AssemblyDefinition.ReadAssembly(
+        using var targetAsmDef = AssemblyDefinition.ReadAssembly(
             targetFileName,
             new ReaderParameters()
             {
@@ -40,7 +40,7 @@ public class WeaverPreprocessor(ILogger logger) : ITestPreprocessor
         );
         
         resolver.AddAssembly(targetAsmDef);
-        var patchAsmDef = resolver.Resolve(new AssemblyNameReference(patchName, version));
+        using var patchAsmDef = resolver.Resolve(new AssemblyNameReference(patchName, version));
         compileTime.ScanAndPatchAll(patchAsmDef);
         compileTime.Commit();
         
@@ -50,8 +50,5 @@ public class WeaverPreprocessor(ILogger logger) : ITestPreprocessor
         {
             WriteSymbols = targetAsmDef.MainModule.HasSymbols,
         });
-        
-        patchAsmDef.Dispose();
-        targetAsmDef.Dispose();
     }
 }
